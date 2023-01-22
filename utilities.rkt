@@ -2024,6 +2024,7 @@ Changelog:
         (let loop ([passes passes]
                    [p tsexp]
                    [tests '()])
+          (printf "---------------------\n")
           (trace "testing" test-name expected-result)
           (cond [(null? passes) (reverse tests)]
                 [else
