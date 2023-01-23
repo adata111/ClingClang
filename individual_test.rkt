@@ -7,7 +7,7 @@
 (define file (command-line #:args (filename) filename))
 (define ast (read-program file))
 
-(debug-level 2)
+(debug-level 1)
 (AST-output-syntax 'concrete-syntax)
 
 (define (opt passes ast)

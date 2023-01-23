@@ -9,21 +9,6 @@
 (require "utilities.rkt")
 (provide (all-defined-out))
 
-(define (flip p)
-  (define (flip-e e)
-    (match e
-      [(Int n) (Int n)]
-      [(Var x) (Var x)]
-      [(Prim op (list e1 e2)) (Prim op (list (flip-e e2) (flip-e e1)))]
-      [(Prim op es) (Prim op (for/list [(e es)] (flip-e e)))]
-      [(Let x rhs body) (Let x (flip-e rhs) (flip-e body))]
-      [_ (error "Nothing matches")]))
-
-  (match p
-    [(Program info body)
-     (Program info (flip-e body))]))
-
-
 (define (uniquify-exp env)
   (lambda (e)
     (match e
@@ -56,23 +41,113 @@
   (match p
     [(Program info e) (Program info ((uniquify-exp '()) e))]))
 
-;; remove-complex-opera* : R1 -> R1
+; remove-complex-opera* : R1 -> R1
+(define (remove-complex-opera* p)
+ 
+  (define (rco_atom exp-to-atom env)
+    ;(printf "\n\nEntered RA exp:~v env:~v\n" exp-to-atom env)
+    ; (match exp-to-atom
+    ;   [(Prim op es)
+    ;     (begin(
+    ;       (printf "RA prim ~v ~v\n" op es)
+    ;       (let* (
+    ;         [temp (gensym "clingclang")]
+    ;         [temp-list (for/list ([e es]) (rco_atom e env))]
+    ;         [ret-prim (Prim op (for/list ([t temp-list]) (begin (printf "Making ret-prim ~v\n" (car t)) (car t))))]
+    ;         [ret-env (append env (list (append (for/list ([t temp-list]) (cadr t)))))]
+    ;       )
+    ;       (begin (printf "Body of let* has temp:~v t-list:~v ret-prim:~v ret-env:~v\n"temp temp-list ret-prim ret-env) (list temp (append ret-env (list* temp ret-prim))))
+    ;       )
+    ;     ))
+    ;   ]
+    ;   [(Let x e body) (Let x e body)]
+    ;   [(Var a) (Var a) ]
+    ;   [(Int n) (list (Int n) '()) ]
+    ; )
 
-; ;; Replace all non-atomic operands with atomic operands
-; (define (remove-complex-opera* p)
+    (define (match-return ax)
+        (match (car ax)
+          [(Var a) (Var a)]
+          [(Int a) (Int a)]
+          [(var a) (dict-ref (cadr ax) a)]
+        )
+    )
 
-;   (define (rco_atom exp-to-atom)
+    (match exp-to-atom
+      [(Prim op es)
+        (begin
+          (printf "Matched prim Ratom op:~v es:~v\n" op es)
+          (let* ([temp-symbol (gensym "clingclang")]
+                [temp-rco-atom-list (for/list ([e es]) (rco_atom e env))]
+                [ops-list (for/list ([atom-ret temp-rco-atom-list])
+                                    (
 
-;   )
+                                      match-return atom-ret
 
-;   (define (rco_exp exp-to-exp)
-;     ; Take an expression in Lvar and 
-;   )
+                                      ; (match (car atom-ret)
+                                      ;   [(Var a) (Var a)]
+                                      ;   [(Int a) (Int a)]
+                                      ;   [(var a) (dict-ref (cadr atom-ret) a)]
+                                      ; )
+
+                                    ))
+                                    ] ; construct the ops from the rco_atom outputs
+                [ret-exp (Prim op ops-list)]
+                )
+            (list temp-symbol (dict-set env temp-symbol (Let temp-symbol ret-exp (Var temp-symbol)))) ; return the atomic and the environment
+          )
+        )
+      ]
+      [(Let x e body) (let* ([temp-symbol (gensym "clingclang")]
+                            [temp-expr (rco_exp (Let x e body))])
+                            (list temp-symbol (dict-set env temp-symbol temp-expr))
+      )]
+
+      [(Var a) (list (Var a) env)]
+      [(Int n) (list (Int n) env)]
+    )
+  )
+
+  (define (func boom)
+  (printf "in func ~v\n" boom)
+  (printf "in func result ~v\n" (rco_atom boom '()))
+    (let ([rco-atom-ret (rco_atom boom '())]) 
+                (cond
+                  [(null? (cadr rco-atom-ret)) (
+                      match (car rco-atom-ret) 
+                      [(Var a) (Var a)]
+                      [(Int a) (Int a)]
+                        )]
+                  [else (dict-ref (cadr rco-atom-ret) (car rco-atom-ret))]
+                )
+  ))
+
+  (define (rco_exp exp-to-exp)
+    (match exp-to-exp
+
+      [(Prim op es) (begin  (Prim op (for/list ([each-e es]) (begin (printf "exp iter each-e:~v \n" each-e) (func each-e)))))]
+
+      ; [(Prim op es) (Prim op (for/list ([each-e es]) ((lambda (e) (let ([rco-atom-ret (rco_atom e '())]) (
+      ;                                                                                     (cond
+      ;                                                                                       [(null? (cadr rco-atom-ret)) (
+      ;                                                                                           match (car rco-atom-ret) 
+      ;                                                                                           [(Var a) (Var a)]
+      ;                                                                                           [(Int a) (Int a)]
+      ;                                                                                             )]
+      ;                                                                                       [else (dict-ref (cadr rco-atom-ret) (car rco-atom-ret))]
+      ;                                                                                     )
+                                      
+      ;                                    ))) each-e )))]
+      [(Let x e body) (Let x (rco_exp e) (rco_exp body))]
+      [(Int a) (Int a)]
+      [(Var a) (Var a)]
+      )
+  )
   
-;   (match p
-;     [(Program info body) (Program info (rco_exp body))] ; TODO do for/each exp
-;                                                         ; info will have alist of vars after explicate_control
-;   ))
+  (match p
+    [(Program info body) (Program info (rco_exp body))] ; TODO do for/each exp
+                                                        ; info will have alist of vars after explicate_control
+  ))
 
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
@@ -84,7 +159,7 @@
 (define compiler-passes
   `( 
      ;; Uncomment the following passes as you finish them.
-     ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-     ;; ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
+     ;; ("uniquify", uniquify, interp-Lvar, type-check-Lvar)
+     ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
      ;; ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
      ))
