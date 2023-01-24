@@ -81,13 +81,13 @@
 
   (define (recursively-add-lets env inp-exp)
     (match inp-exp                                            ; if this is an Prim op, add the defintions of the operands from the environment
-      [(Prim op es) (for/fold ([result (Prim op es)])
+      [(Prim op es) (for/fold ([result (Prim op es)])         ; use for/fold to get the nested Lets for 1/2/more operands, the initial result is the prim as it is, in case no Let's happen
                                 ([each-opd es])
-                                (match each-opd
+                                (match each-opd               ; wrap the result around a Let only if it is a Var symbol
                                   [(Var v)
                                     (cond
                                       [(dict-has-key? env v) (Let v (recursively-add-lets env (dict-ref env v)) result)]
-                                      [else result])
+                                      [else result])          ; if this symbol is not in the env, it has already Let'ed before, return the result as it is
                                   ]
                                   [_ result]))
         ]
@@ -103,23 +103,18 @@
       ;[(Prim op es) (let* ([es-rets (for/list ([each-e es]) (rco_atom each-e))]
       [(Prim op es) (let* ([es-rets (for/fold ([ret-vals '()]) ([each-e es]) (let-values([(op-sym op-env) (rco_atom each-e)]) (append ret-vals (list (list op-sym op-env)))))]
 
-                            [full-env                                                                           ; combine the environments of the atomicized operands
+                            [full-env                                                                         ; combine the environments of the atomicized operands
                                 (for/fold ([full-env '()]) ([each-ret es-rets]) (append full-env (cadr each-ret)))]
                             [all-op-atms                                                                      ; get all the atomicized operands
                                 (for/fold ([all-ops '()]) ([each-ret es-rets]) (append all-ops  (list (make-var (car each-ret)))))]
                           )
-                          ;(for/fold ([result (Prim op all-op-atms)]) ([each-entry full-env]) (begin (printf "In rco_exp for/fold(r) with full-env ~v\n with all-op-atms ~v\n  potentially returning ~v\n-----\n" full-env all-op-atms (Let (car each-entry) (cdr each-entry) result)) (Let (car each-entry) (cdr each-entry) result)))
-                          ; (for/fold ([result (Prim op all-op-atms)]) ([each-entry all-op-atms]) (Let (get-symbol-func each-entry) (dict-ref-if-sym full-env each-entry) result))
-                          ; (for/foldr ([result (Prim op all-op-atms)]) ([each-entry all-op-atms]) (begin (printf "In rco_exp for/fold(r) with full-env ~v\n with all-top-atms ~v\n potentially returning ~v\n----\n" full-env all-op-atms (cond [(symbol? each-entry) (Let (get-symbol-func each-entry) (dict-ref full-env (get-symbol-func each-entry)) result)][else result]))
-                          ;                                                                         (cond [(symbol? each-entry) (Let (get-symbol-func each-entry) (dict-ref full-env (get-symbol-func each-entry)) result)][else result])))
-                          (recursively-add-lets full-env (Prim op all-op-atms))
+                          (recursively-add-lets full-env (Prim op all-op-atms))                               ; wrap this primitive op es around lets that define the operands of this Prim
                     )]
     )
   )
   
   (match p
-    [(Program info body) (Program info (rco_exp body))] ; TODO do for/each exp
-                                                        ; info will have alist of vars after explicate_control
+    [(Program info body) (Program info (rco_exp body))]
   ))
 
 (define (explicate_tail e)
@@ -158,27 +153,3 @@
      ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
      ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
      ))
-
-
-; ; (define file (command-line #:args (filename) filename))
-; (define file "tests/var_test_18.rkt")
-; (define ast (read-program file))
-
-; (debug-level 1)
-; (AST-output-syntax 'concrete-syntax)
-
-; (define (opt passes ast)
-;   (pretty-print ast)
-;   (match passes
-;     ['() ast]
-;     [(list (list name fun interp type-check) more ...)
-;      (println (string-append "Applying " name))
-;      (opt more (type-check (fun ast)))]
-;     [(list (list name fun interp) more ...)
-;      (println (string-append "Applying " name))
-;      (opt more (fun ast))]
-;     [(list (list name fun) more ...)
-;      (println (string-append "Applying " name))
-;      (opt more (fun ast))]))
-
-; (define final (opt compiler-passes ast))
