@@ -1,6 +1,1 @@
-(let ([x
-        (let ([x 20])
-            (+ x ( let([x 22]) x )))
-        ])
-    x
-)
+(let ([x (let ([x 2]) (+ x ( let([x 11]) x )))]) x)
