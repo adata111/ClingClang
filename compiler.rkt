@@ -44,8 +44,6 @@
 ; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
 
-  (printf "\n\nRemoving complex operands ~v\n" p)
-
   (define (make-var var-change)
     (cond
       [(symbol? var-change) (Var var-change)]
