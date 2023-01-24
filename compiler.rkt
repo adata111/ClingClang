@@ -59,8 +59,7 @@
 
 
       [(Let x e body)       ; to convert the let into an atomic: (1) assign a tmp to the simplified expression e, (2) make the body an atomic and assign to a variable body-var (3) return the body-var and environment with body-var
-        (let* ([exp-simple (gensym "clingclang")] [exp-simple (rco_exp e)])
-              (let-values ([(tmp-body body-env) (rco_atom body)]) (values tmp-body (dict-set body-env x exp-simple))))    ; extract the body's symbol and env with let-values and return the body's symbol along with the env with the newly let'ed variable 
+        (let-values ([(tmp-body body-env) (rco_atom body)]) (values tmp-body (dict-set body-env x (rco_exp e))))    ; extract the body's symbol and env with let-values and return the body's symbol along with the env with the newly let'ed variable 
       ]
 
       [(Prim op es) (let* ([prim-atm (gensym "clingclang")] [es-rets (for/fold ([ret-vals '()]) ([each-e es]) (let-values([(op-sym op-env) (rco_atom each-e)]) (append ret-vals (list (list op-sym op-env)))))] ; if it is a primitive, first get the atomic exps of all operands
