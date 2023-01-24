@@ -41,117 +41,104 @@
   (match p
     [(Program info e) (Program info ((uniquify-exp '()) e))]))
 
+
+
+
+
+
+
 ; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
- 
-  (define (rco_atom exp-to-atom env)
-    ;(printf "\n\nEntered RA exp:~v env:~v\n" exp-to-atom env)
-    ; (match exp-to-atom
-    ;   [(Prim op es)
-    ;     (begin(
-    ;       (printf "RA prim ~v ~v\n" op es)
-    ;       (let* (
-    ;         [temp (gensym "clingclang")]
-    ;         [temp-list (for/list ([e es]) (rco_atom e env))]
-    ;         [ret-prim (Prim op (for/list ([t temp-list]) (begin (printf "Making ret-prim ~v\n" (car t)) (car t))))]
-    ;         [ret-env (append env (list (append (for/list ([t temp-list]) (cadr t)))))]
-    ;       )
-    ;       (begin (printf "Body of let* has temp:~v t-list:~v ret-prim:~v ret-env:~v\n"temp temp-list ret-prim ret-env) (list temp (append ret-env (list* temp ret-prim))))
-    ;       )
-    ;     ))
-    ;   ]
-    ;   [(Let x e body) (Let x e body)]
-    ;   [(Var a) (Var a) ]
-    ;   [(Int n) (list (Int n) '()) ]
-    ; )
 
-    (define (match-return ax)
-        (match (car ax)
-          [(Var a) (Var a)]
-          [(Int a) (Int a)]
-          [(var a) (dict-ref (cadr ax) a)]
-        )
+  (printf "\n\nRemoving complex operands ~v\n" p)
+
+  (define (make-var var-change)
+    (cond
+      [(symbol? var-change) (Var var-change)]
+      [else var-change])
     )
 
+  (define (rco_atom exp-to-atom)
+  (printf "Entered rco_atom with ~v\n-----\n" exp-to-atom)
     (match exp-to-atom
-      [(Prim op es)
-        (begin
-          (printf "Matched prim Ratom op:~v es:~v\n" op es)
-          (let* ([temp-symbol (gensym "clingclang")]
-                [temp-rco-atom-list (for/list ([e es]) (rco_atom e env))]
-                [ops-list (for/list ([atom-ret temp-rco-atom-list])
-                                    (
+      [(Int a) (values (Int a) '())]    ; If the expressions are simple already
+      [(Var a) (values (Var a) '())]    ; return them as it is with an empty environment
 
-                                      match-return atom-ret
 
-                                      ; (match (car atom-ret)
-                                      ;   [(Var a) (Var a)]
-                                      ;   [(Int a) (Int a)]
-                                      ;   [(var a) (dict-ref (cadr atom-ret) a)]
-                                      ; )
-
-                                    ))
-                                    ] ; construct the ops from the rco_atom outputs
-                [ret-exp (Prim op ops-list)]
-                )
-            (list temp-symbol (dict-set env temp-symbol (Let temp-symbol ret-exp (Var temp-symbol)))) ; return the atomic and the environment
-          )
-        )
+      [(Let x e body)       ; to convert the let into an atomic: (1) assign a tmp to the simplified expression e, (2) make the body an atomic and assign to a variable body-var (3) return the body-var and environment with body-var
+        (let* ([exp-simple (gensym "clingclang")] [exp-simple (begin (printf "Entering rco_exp from rco_atom let exp-simple with ~v\n----\n" e) (rco_exp e))])
+              (let-values ([(tmp-body body-env) (rco_atom body)]) (values tmp-body (dict-set body-env x exp-simple))))    ; extract the body's symbol and env with let-values and return the body's symbol along with the env with the newly let'ed variable 
       ]
-      [(Let x e body) (let* ([temp-symbol (gensym "clingclang")]
-                            [temp-expr (rco_exp (Let x e body))])
-                            (list temp-symbol (dict-set env temp-symbol temp-expr))
-      )]
 
-      [(Var a) (list (Var a) env)]
-      [(Int n) (list (Int n) env)]
+      [(Prim op es) (let* ([prim-atm (gensym "clingclang")] [es-rets (for/fold ([ret-vals '()]) ([each-e es]) (let-values([(op-sym op-env) (rco_atom each-e)]) (append ret-vals (list (list op-sym op-env)))))] ; if it is a primitive, first get the atomic exps of all operands
+                            [full-env                                                                           ; combine the environments of the atomicized operands
+                                (for/fold ([full-env '()]) ([each-ret es-rets]) (append full-env (cadr each-ret)))]
+                            [all-op-atms                                                                      ; get all the atomicized operands
+                                (for/fold ([all-ops '()]) ([each-ret es-rets]) (append all-ops  (list (make-var (car each-ret)))))]
+                            )
+                          (values prim-atm (dict-set full-env prim-atm (Prim op all-op-atms))))]                ; return the symbol for the entire prim expression along with the environment 
     )
   )
 
-  (define (func boom)
-  (printf "in func ~v\n" boom)
-  (printf "in func result ~v\n" (rco_atom boom '()))
-    (let ([rco-atom-ret (rco_atom boom '())]) 
-                (cond
-                  [(null? (cadr rco-atom-ret)) (
-                      match (car rco-atom-ret) 
-                      [(Var a) (Var a)]
-                      [(Int a) (Int a)]
-                        )]
-                  [else (dict-ref (cadr rco-atom-ret) (car rco-atom-ret))]
-                )
-  ))
-
   (define (rco_exp exp-to-exp)
+    (printf "Entered rco_exp with ~v\n-----\n" exp-to-exp)
     (match exp-to-exp
-
-      [(Prim op es) (begin  (Prim op (for/list ([each-e es]) (begin (printf "exp iter each-e:~v \n" each-e) (func each-e)))))]
-
-      ; [(Prim op es) (Prim op (for/list ([each-e es]) ((lambda (e) (let ([rco-atom-ret (rco_atom e '())]) (
-      ;                                                                                     (cond
-      ;                                                                                       [(null? (cadr rco-atom-ret)) (
-      ;                                                                                           match (car rco-atom-ret) 
-      ;                                                                                           [(Var a) (Var a)]
-      ;                                                                                           [(Int a) (Int a)]
-      ;                                                                                             )]
-      ;                                                                                       [else (dict-ref (cadr rco-atom-ret) (car rco-atom-ret))]
-      ;                                                                                     )
-                                      
-      ;                                    ))) each-e )))]
-      [(Let x e body) (Let x (rco_exp e) (rco_exp body))]
       [(Int a) (Int a)]
       [(Var a) (Var a)]
-      )
+      [(Let x e body) (Let x (rco_exp e) (rco_exp body))]
+      ;[(Prim op es) (let* ([es-rets (for/list ([each-e es]) (rco_atom each-e))]
+      [(Prim op es) (let* ([es-rets (for/fold ([ret-vals '()]) ([each-e es]) (let-values([(op-sym op-env) (rco_atom each-e)]) (append ret-vals (list (list op-sym op-env)))))]
+
+                            [full-env                                                                           ; combine the environments of the atomicized operands
+                                (for/fold ([full-env '()]) ([each-ret es-rets]) (append full-env (cadr each-ret)))]
+                            [all-op-atms                                                                      ; get all the atomicized operands
+                                (for/fold ([all-ops '()]) ([each-ret es-rets]) (append all-ops  (list (make-var (car each-ret)))))]
+                          )
+                          (for/foldr ([result (Prim op all-op-atms)]) ([each-entry full-env]) (Let (car each-entry) (cdr each-entry) result))
+                    )]
+    )
   )
   
   (match p
-    [(Program info body) (Program info (rco_exp body))] ; TODO do for/each exp
+    [(Program info body) (Program info (begin (printf "Entering from program info with ~v\n\n" body) (rco_exp body)))] ; TODO do for/each exp
                                                         ; info will have alist of vars after explicate_control
   ))
 
+
+
+
+
+
+(define (explicate_tail e)
+  (printf "\n\nExplTail ~v\n---\n" e)
+  (match e
+    [(Var x) (Return (Var x))]
+    [(Int n) (Return (Int n))]
+    [(Return r) (Return r)]
+    [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
+    [(Prim op es) (Return (Prim op es))]
+    [_ e]
+  )
+)
+
+;     [(Let y rhs body) (Seq (Assign (Var x) (explicate_assign rhs y body)) (explicate_tail cont))] doubtful line in assign
+
+(define (explicate_assign x e cont)
+(printf "\n\nExplAssign x:~v\ne:~v\ncont:~v\n---\n"x e cont)
+  (match e
+    [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
+    [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
+    [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
+    [(Prim op es) (Seq
+       (Assign (Var x) e) cont)]
+  )
+)
+
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
-  (error "TODO: code goes here (explicate-control)"))
+  (match p
+    [(Program info body) (CProgram info `((start . ,(explicate_tail body))))])
+)
 
 ;; Define the compiler passes to be used by interp-tests and the grader
 ;; Note that your compiler file (the file that defines the passes)
@@ -161,5 +148,29 @@
      ;; Uncomment the following passes as you finish them.
      ;; ("uniquify", uniquify, interp-Lvar, type-check-Lvar)
      ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
-     ;; ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+     ;; ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
      ))
+
+
+; ; (define file (command-line #:args (filename) filename))
+; (define file "tests/var_test_18.rkt")
+; (define ast (read-program file))
+
+; (debug-level 1)
+; (AST-output-syntax 'concrete-syntax)
+
+; (define (opt passes ast)
+;   (pretty-print ast)
+;   (match passes
+;     ['() ast]
+;     [(list (list name fun interp type-check) more ...)
+;      (println (string-append "Applying " name))
+;      (opt more (type-check (fun ast)))]
+;     [(list (list name fun interp) more ...)
+;      (println (string-append "Applying " name))
+;      (opt more (fun ast))]
+;     [(list (list name fun) more ...)
+;      (println (string-append "Applying " name))
+;      (opt more (fun ast))]))
+
+; (define final (opt compiler-passes ast))
