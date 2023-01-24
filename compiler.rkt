@@ -78,7 +78,7 @@
 
   (define (recursively-add-lets env inp-exp)
     (match inp-exp                                            ; if this is an Prim op, add the defintions of the operands from the environment
-      [(Prim op es) (for/fold ([result (Prim op es)])         ; use for/fold to get the nested Lets for 1/2/more operands, the initial result is the prim as it is, in case no Let's happen
+      [(Prim op es) (for/foldr ([result (Prim op es)])         ; use for/foldr to get the nested Lets for 1/2/more operands, the initial result is the prim as it is, in case no Let's happen
                                 ([each-opd es])
                                 (match each-opd               ; wrap the result around a Let only if it is a Var symbol
                                   [(Var v)
