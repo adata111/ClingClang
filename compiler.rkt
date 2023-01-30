@@ -152,7 +152,7 @@
   (match expr
     [(Prim 'read '()) 
       (list
-        (Callq 'read_int 1)
+        (Callq 'read_int 1) ;TODO check callq second arg later
         (Instr 'movq (list (Reg 'rax) (Var x))) 
       )
     ]
@@ -193,39 +193,46 @@
 )
 
 
-(define (make-ret-instr ret-expr)
+(define (make-ret-instr ret-expr) ;TODO check jump conclusion
   (match ret-expr
     [(Prim 'read '()) 
       (list
-        (Callq 'read_int 1)
+        (Callq 'read_int 1) ;TODO check callq second arg later
+        (Jmp 'conclusion)
+
       )
     ]
     [(Prim '+ (list arg1 arg2)) 
       (list 
         (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Reg 'rax))) 
         (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+        (Jmp 'conclusion)
       )
     ]
     [(Prim '- (list arg1 arg2)) 
       (list 
         (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
         (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
+        (Jmp 'conclusion)
       )
     ]
     [(Prim '- (list arg1)) 
       (list 
         (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
         (Instr 'negq (list (Reg 'rax))) 
+        (Jmp 'conclusion)
       )
     ]
     [(Int n) 
       (list 
         (Instr 'movq (list (Imm n) (Reg 'rax))) 
+        (Jmp 'conclusion)
       )
     ]
     [(Var x) 
       (list 
         (Instr 'movq (list (Var x) (Reg 'rax))) 
+        (Jmp 'conclusion)
       )
     ]
   )
@@ -242,11 +249,7 @@
     [(Seq first-line tailz)
       (begin
       ; (printf "-----\nBlock has first-line ~v\n" first-line)
-      ; (append (unpack-seq tailz) block-list)
       (append (make-instr first-line) (unpack-seq tailz))
-      ; (for/fold )
-      ; make a list of all instructions after unpacking them
-      ; traverse through the list to create list of instructions of the form Instr
     )]
   )
 )
@@ -254,7 +257,7 @@
 (define (make-pseudo-x86 blocks)
   (for/fold ([instr-blocks-dict '()])
             ([(label block) (in-dict blocks)]) 
-            (dict-set instr-blocks-dict label (Block '() (unpack-seq block))) ; TODO: populate info  
+            (dict-set instr-blocks-dict label (Block '() (unpack-seq block)))
   )
 )
 
@@ -264,11 +267,64 @@
   (match p
     [(CProgram info body) (X86Program info (make-pseudo-x86 body))]
   )
-
 )
+
+
+
+
+
+
+(define (create-var-stack-dict info)
+  (for/fold ([var-stack-dict '()] [offset 0])
+            ([(var var-datatype) (in-dict info)]) 
+            (values (dict-set var-stack-dict var (- offset 8)) (- offset 8))))
+
+(define (format-offset total-offset)
+  ; (printf "format-offset total-offset: ~v\n\n" total-offset)
+  (cond 
+    [(zero? (remainder (- total-offset) 16)) (- total-offset)]
+    [else (+ 8 (- total-offset))]))
+
+
+(define (replace-var-with-stack block offset-dict)
+
+  (define (replace-each-arg arg)
+    (match arg
+      [(Var x) (Deref 'rbp (dict-ref offset-dict x))]
+      [_ arg]
+    )
+  )
+
+  (define (replace-exp exp)
+    (match exp
+      [(Instr name arg-list) (Instr name (for/list ([each-arg arg-list]) (replace-each-arg each-arg)))]
+      [_ exp]
+    )
+  )
+  (match block
+    [(Block info block-lines) (Block info (for/list ([line block-lines]) (replace-exp line)))])
+)
+
+(define (make-x86-var var-stack-dict body-dict)
+  ; (printf "in make-x86-var var-stack-dict \n~v\n" var-stack-dict)
+  (for/fold ([new-body-dict '()])
+            ([(label block) (in-dict body-dict)]) 
+            (dict-set new-body-dict label (replace-var-with-stack block var-stack-dict))
+  )
+)
+
 ;; assign-homes : pseudo-x86 -> pseudo-x86
 (define (assign-homes p)
-  (error "TODO: code goes here (assign-homes)"))
+  (match p
+    [(X86Program info body) 
+        (let*-values (
+          [(var-stack-offsets total-offset) (create-var-stack-dict (dict-ref info 'locals-types))]          ; make a dict of each variable and the offset on the stack
+          [(new-info) (dict-set info 'stack-space (format-offset total-offset))]    ; add the total stack-space that is needed for all the variables
+        )
+        (X86Program new-info (make-x86-var var-stack-offsets body))               ; replace the variables in the body with the stack offsets
+      )]
+  )
+)
 
 ;; patch-instructions : psuedo-x86 -> x86
 (define (patch-instructions p)
@@ -289,4 +345,5 @@
      ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
      ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
      ("instruction selection", select-instructions, interp-pseudo-x86-0)
+     ("assign homes", assign-homes, interp-x86-0)
      ))
