@@ -1,6 +1,7 @@
 #lang racket
 (require racket/set racket/stream)
 (require racket/fixnum)
+(require "interp.rkt")
 (require "interp-Lint.rkt")
 (require "interp-Lvar.rkt")
 (require "interp-Cvar.rkt")
@@ -140,6 +141,144 @@
     [(Program info body) (CProgram info `((start . ,(explicate_tail body))))])
 )
 
+(define (atm-to-pseudo-x86 atm)
+  (match atm
+    [(Int n) (Imm n)]
+    [(Var x) (Var x)]
+  )
+)
+
+(define (expr-to-instr-list x expr)
+  (match expr
+    [(Prim 'read '()) 
+      (list
+        (Callq 'read_int 1)
+        (Instr 'movq (list (Reg 'rax) (Var x))) 
+      )
+    ]
+    [(Prim '+ (list arg1 arg2)) 
+      (list 
+        (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Var x))) 
+        (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Var x)))
+      )
+    ]
+    [(Prim '- (list arg1 arg2)) 
+      (list 
+        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x))) 
+        (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Var x)))
+      )
+    ]
+    [(Prim '- (list arg1)) 
+      (list 
+        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x)))
+        (Instr 'negq (list (Var x))) 
+      )
+    ]
+    [(Int n) (list 
+        (Instr 'movq (list (Imm n) (Var x))) 
+      )
+    ]
+    [(Var a) (list 
+        (Instr 'movq (list (Var a) (Var x))) 
+      )
+    ]
+
+  )
+)
+
+(define (make-instr stmt)
+  (match stmt
+    [(Assign (Var x) e) (expr-to-instr-list x e)]
+  )
+)
+
+
+(define (make-ret-instr ret-expr)
+  (match ret-expr
+    [(Prim 'read '()) 
+      (list
+        (Callq 'read_int 1)
+      )
+    ]
+    [(Prim '+ (list arg1 arg2)) 
+      (list 
+        (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Reg 'rax))) 
+        (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+      )
+    ]
+    [(Prim '- (list arg1 arg2)) 
+      (list 
+        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
+        (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
+      )
+    ]
+    [(Prim '- (list arg1)) 
+      (list 
+        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+        (Instr 'negq (list (Reg 'rax))) 
+      )
+    ]
+    [(Int n) 
+      (list 
+        (Instr 'movq (list (Imm n) (Reg 'rax))) 
+      )
+    ]
+    [(Var x) 
+      (list 
+        (Instr 'movq (list (Var x) (Reg 'rax))) 
+      )
+    ]
+  )
+)
+
+(define (unpack-seq block)
+  (match block
+    [(Return e)
+        (begin
+          ; (printf "----\nBlock is returning ~v\n" e)
+          (make-ret-instr e)
+        )
+    ]
+    [(Seq first-line tailz)
+      (begin
+      ; (printf "-----\nBlock has first-line ~v\n" first-line)
+      ; (append (unpack-seq tailz) block-list)
+      (append (make-instr first-line) (unpack-seq tailz))
+      ; (for/fold )
+      ; make a list of all instructions after unpacking them
+      ; traverse through the list to create list of instructions of the form Instr
+    )]
+  )
+)
+
+(define (make-pseudo-x86 blocks)
+  (for/fold ([instr-blocks-dict '()])
+            ([(label block) (in-dict blocks)]) 
+            (dict-set instr-blocks-dict label (Block '() (unpack-seq block))) ; TODO: populate info  
+  )
+)
+
+
+;; select-instructions : C0 -> pseudo-x86
+(define (select-instructions p)
+  (match p
+    [(CProgram info body) (X86Program info (make-pseudo-x86 body))]
+  )
+
+)
+;; assign-homes : pseudo-x86 -> pseudo-x86
+(define (assign-homes p)
+  (error "TODO: code goes here (assign-homes)"))
+
+;; patch-instructions : psuedo-x86 -> x86
+(define (patch-instructions p)
+  (error "TODO: code goes here (patch-instructions)"))
+
+;; prelude-and-conclusion : x86 -> x86
+(define (prelude-and-conclusion p)
+  (error "TODO: code goes here (prelude-and-conclusion)"))
+
+
 ;; Define the compiler passes to be used by interp-tests and the grader
 ;; Note that your compiler file (the file that defines the passes)
 ;; must be named "compiler.rkt"
@@ -149,4 +288,5 @@
      ("uniquify", uniquify, interp-Lvar, type-check-Lvar)
      ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
      ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
+     ("instruction selection", select-instructions, interp-pseudo-x86-0)
      ))
