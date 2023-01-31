@@ -152,7 +152,7 @@
   (match expr
     [(Prim 'read '()) 
       (list
-        (Callq 'read_int 1) ;TODO check callq second arg later
+        (Callq 'read_int 0)
         (Instr 'movq (list (Reg 'rax) (Var x))) 
       )
     ]
@@ -193,13 +193,12 @@
 )
 
 
-(define (make-ret-instr ret-expr) ;TODO check jump conclusion
+(define (make-ret-instr ret-expr)
   (match ret-expr
     [(Prim 'read '()) 
       (list
-        (Callq 'read_int 1) ;TODO check callq second arg later
+        (Callq 'read_int 0)
         (Jmp 'conclusion)
-
       )
     ]
     [(Prim '+ (list arg1 arg2)) 
@@ -269,11 +268,6 @@
   )
 )
 
-
-
-
-
-
 (define (create-var-stack-dict info)
   (for/fold ([var-stack-dict '()] [offset 0])
             ([(var var-datatype) (in-dict info)]) 
@@ -284,7 +278,6 @@
   (cond 
     [(zero? (remainder (- total-offset) 16)) (- total-offset)]
     [else (+ 8 (- total-offset))]))
-
 
 (define (replace-var-with-stack block offset-dict)
 
@@ -365,25 +358,25 @@
 ;; prelude-and-conclusion : x86 -> x86
 (define (prelude-and-conclusion p)
   
-  (define (make-prelude-conclusion body-dict)
+  (define (make-prelude-conclusion body-dict info)
 
-  (define main-body (Block '() (list
-                      (Instr 'pushq (list (Reg 'rbp)))
-                      (Instr 'movq (list (Reg 'rsp) (Reg 'rbp)))
-                      (Instr 'subq (list (Imm 16) (Reg 'rsp)))
-                      (Jmp 'start)
-                      )))
-  (define conclusion-body (Block '() (list
-                      (Instr 'addq (list (Imm 16) (Reg 'rsp)))
-                      (Instr 'popq (list (Reg 'rbp)))
-                      (Retq)
-                      )))
+    (define main-body (Block '() (list
+                        (Instr 'pushq (list (Reg 'rbp)))
+                        (Instr 'movq (list (Reg 'rsp) (Reg 'rbp)))
+                        (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
+                        (Jmp 'start)
+                        )))
+    (define conclusion-body (Block '() (list
+                        (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
+                        (Instr 'popq (list (Reg 'rbp)))
+                        (Retq)
+                        )))
 
-  (dict-set (dict-set body-dict 'main main-body) 'conclusion conclusion-body )
+    (dict-set (dict-set body-dict 'main main-body) 'conclusion conclusion-body )
   )
 
   (match p
-    [(X86Program info body) (X86Program info (make-prelude-conclusion body))]
+    [(X86Program info body) (X86Program info (make-prelude-conclusion body info))]
   )
 )
 
