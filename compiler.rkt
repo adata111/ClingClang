@@ -175,7 +175,7 @@
       )
     ]
     [(Int n) (list 
-        (Instr 'movq (list (Imm n) (Var x))) 
+        (Instr 'movq (list (Imm n) (Var x)))
       )
     ]
     [(Var a) (list 
@@ -364,7 +364,28 @@
 
 ;; prelude-and-conclusion : x86 -> x86
 (define (prelude-and-conclusion p)
-  (error "TODO: code goes here (prelude-and-conclusion)"))
+  
+  (define (make-prelude-conclusion body-dict)
+
+  (define main-body (Block '() (list
+                      (Instr 'pushq (list (Reg 'rbp)))
+                      (Instr 'movq (list (Reg 'rsp) (Reg 'rbp)))
+                      (Instr 'subq (list (Imm 16) (Reg 'rsp)))
+                      (Jmp 'start)
+                      )))
+  (define conclusion-body (Block '() (list
+                      (Instr 'addq (list (Imm 16) (Reg 'rsp)))
+                      (Instr 'popq (list (Reg 'rbp)))
+                      (Retq)
+                      )))
+
+  (dict-set (dict-set body-dict 'main main-body) 'conclusion conclusion-body )
+  )
+
+  (match p
+    [(X86Program info body) (X86Program info (make-prelude-conclusion body))]
+  )
+)
 
 
 ;; Define the compiler passes to be used by interp-tests and the grader
@@ -379,4 +400,5 @@
      ("instruction selection", select-instructions, interp-pseudo-x86-0)
      ("assign homes", assign-homes, interp-x86-0)
      ("patch instructions", patch-instructions, interp-x86-0)
+     ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
      ))
