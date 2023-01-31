@@ -326,9 +326,41 @@
   )
 )
 
+(define (make-x86 body-dict)
+
+  (define (patch-line line)
+    (match line
+      [(Instr operator (list (Deref 'rbp offset1) (Deref 'rbp offset2)))
+                        (list
+                          (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
+                          (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
+      [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))
+        (list (Instr 'movq (list (Imm n) (Reg 'rax)))
+              (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
+        )
+      ]
+      [_ (list line)]
+    )
+  )
+
+  (define (patch-block block)
+    (match block
+      [(Block info block-lines) (Block info (
+          for/fold ([new-block-lines '()]) ([line block-lines]) (append new-block-lines (patch-line line))))])
+  )
+
+  (for/fold ([new-body-dict '()])
+            ([(label block) (in-dict body-dict)]) 
+            (dict-set new-body-dict label (patch-block block))
+  )
+)
+
 ;; patch-instructions : psuedo-x86 -> x86
 (define (patch-instructions p)
-  (error "TODO: code goes here (patch-instructions)"))
+  (match p
+    [(X86Program info body) (X86Program info (make-x86 body))]
+  )
+)
 
 ;; prelude-and-conclusion : x86 -> x86
 (define (prelude-and-conclusion p)
@@ -346,4 +378,5 @@
      ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
      ("instruction selection", select-instructions, interp-pseudo-x86-0)
      ("assign homes", assign-homes, interp-x86-0)
+     ("patch instructions", patch-instructions, interp-x86-0)
      ))
