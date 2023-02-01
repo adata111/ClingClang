@@ -115,241 +115,241 @@
     [(Program info body) (Program info (rco_exp body))]
   ))
 
-(define (explicate_tail e)
-  (match e
-    [(Var x) (Return (Var x))]
-    [(Int n) (Return (Int n))]
-    [(Return r) (Return r)]
-    [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
-    [(Prim op es) (Return (Prim op es))]
-    [_ e]
-  )
-)
-
-(define (explicate_assign x e cont)
-  (match e
-    [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
-    [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
-    [(Prim op es) (Seq (Assign (Var x) e) cont)]
-    [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
-  )
-)
-
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
+
+  (define (explicate_tail e)
+    (match e
+      [(Var x) (Return (Var x))]
+      [(Int n) (Return (Int n))]
+      [(Return r) (Return r)]
+      [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
+      [(Prim op es) (Return (Prim op es))]
+      [_ e]
+    )
+  )
+
+  (define (explicate_assign x e cont)
+    (match e
+      [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
+      [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
+      [(Prim op es) (Seq (Assign (Var x) e) cont)]
+      [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
+    )
+  )
+
   (match p
     [(Program info body) (CProgram info `((start . ,(explicate_tail body))))])
-)
-
-(define (atm-to-pseudo-x86 atm)
-  (match atm
-    [(Int n) (Imm n)]
-    [(Var x) (Var x)]
-  )
-)
-
-(define (expr-to-instr-list x expr)
-  (match expr
-    [(Prim 'read '()) 
-      (list
-        (Callq 'read_int 0)
-        (Instr 'movq (list (Reg 'rax) (Var x))) 
-      )
-    ]
-    [(Prim '+ (list arg1 arg2)) 
-      (list 
-        (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Var x))) 
-        (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Var x)))
-      )
-    ]
-    [(Prim '- (list arg1 arg2)) 
-      (list 
-        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x))) 
-        (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Var x)))
-      )
-    ]
-    [(Prim '- (list arg1)) 
-      (list 
-        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x)))
-        (Instr 'negq (list (Var x))) 
-      )
-    ]
-    [(Int n) (list 
-        (Instr 'movq (list (Imm n) (Var x)))
-      )
-    ]
-    [(Var a) (list 
-        (Instr 'movq (list (Var a) (Var x))) 
-      )
-    ]
-
-  )
-)
-
-(define (make-instr stmt)
-  (match stmt
-    [(Assign (Var x) e) (expr-to-instr-list x e)]
-  )
-)
-
-
-(define (make-ret-instr ret-expr)
-  (match ret-expr
-    [(Prim 'read '()) 
-      (list
-        (Callq 'read_int 0)
-        (Jmp 'conclusion)
-      )
-    ]
-    [(Prim '+ (list arg1 arg2)) 
-      (list 
-        (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Reg 'rax))) 
-        (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
-        (Jmp 'conclusion)
-      )
-    ]
-    [(Prim '- (list arg1 arg2)) 
-      (list 
-        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
-        (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
-        (Jmp 'conclusion)
-      )
-    ]
-    [(Prim '- (list arg1)) 
-      (list 
-        (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
-        (Instr 'negq (list (Reg 'rax))) 
-        (Jmp 'conclusion)
-      )
-    ]
-    [(Int n) 
-      (list 
-        (Instr 'movq (list (Imm n) (Reg 'rax))) 
-        (Jmp 'conclusion)
-      )
-    ]
-    [(Var x) 
-      (list 
-        (Instr 'movq (list (Var x) (Reg 'rax))) 
-        (Jmp 'conclusion)
-      )
-    ]
-  )
-)
-
-(define (unpack-seq block)
-  (match block
-    [(Return e)
-        (begin
-          ; (printf "----\nBlock is returning ~v\n" e)
-          (make-ret-instr e)
-        )
-    ]
-    [(Seq first-line tailz)
-      (begin
-      ; (printf "-----\nBlock has first-line ~v\n" first-line)
-      (append (make-instr first-line) (unpack-seq tailz))
-    )]
-  )
-)
-
-(define (make-pseudo-x86 blocks)
-  (for/fold ([instr-blocks-dict '()])
-            ([(label block) (in-dict blocks)]) 
-            (dict-set instr-blocks-dict label (Block '() (unpack-seq block)))
-  )
 )
 
 
 ;; select-instructions : C0 -> pseudo-x86
 (define (select-instructions p)
+
+  (define (atm-to-pseudo-x86 atm)
+    (match atm
+      [(Int n) (Imm n)]
+      [(Var x) (Var x)]
+    )
+  )
+
+  (define (expr-to-instr-list x expr)               ; convert the expression into x86 instructions and assign it to x
+    (match expr
+      [(Prim 'read '())                             ; if it is a read operation, call the read_int function, the result of read_int is stored in rax, assign it to x
+        (list
+          (Callq 'read_int 0)
+          (Instr 'movq (list (Reg 'rax) (Var x))) 
+        )
+      ]
+      [(Prim '+ (list arg1 arg2)) 
+        (list 
+          (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Var x))) 
+          (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Var x)))
+        )
+      ]
+      [(Prim '- (list arg1 arg2)) 
+        (list 
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x))) 
+          (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Var x)))
+        )
+      ]
+      [(Prim '- (list arg1)) 
+        (list 
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x)))
+          (Instr 'negq (list (Var x))) 
+        )
+      ]
+      [(Int n) (list 
+          (Instr 'movq (list (Imm n) (Var x)))
+        )
+      ]
+      [(Var a) (list 
+          (Instr 'movq (list (Var a) (Var x))) 
+        )
+      ]
+
+    )
+  )
+
+  (define (make-instr stmt)
+    (match stmt
+      [(Assign (Var x) e) (expr-to-instr-list x e)]           ; every line is just an assignment, convert the expression to x86 code and assign it to x
+    )
+  )
+
+
+  (define (make-ret-instr ret-expr)       ; convert the expression to x86, store the return value in %rax, and jump to the conclusion label since the entire block has now ended with this return statement
+    (match ret-expr
+      [(Prim 'read '()) 
+        (list
+          (Callq 'read_int 0)
+          (Jmp 'conclusion)
+        )
+      ]
+      [(Prim '+ (list arg1 arg2)) 
+        (list 
+          (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Reg 'rax))) 
+          (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+          (Jmp 'conclusion)
+        )
+      ]
+      [(Prim '- (list arg1 arg2)) 
+        (list 
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
+          (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
+          (Jmp 'conclusion)
+        )
+      ]
+      [(Prim '- (list arg1)) 
+        (list 
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+          (Instr 'negq (list (Reg 'rax))) 
+          (Jmp 'conclusion)
+        )
+      ]
+      [(Int n) 
+        (list 
+          (Instr 'movq (list (Imm n) (Reg 'rax))) 
+          (Jmp 'conclusion)
+        )
+      ]
+      [(Var x) 
+        (list 
+          (Instr 'movq (list (Var x) (Reg 'rax))) 
+          (Jmp 'conclusion)
+        )
+      ]
+    )
+  )
+
+  (define (unpack-seq block)
+    (match block
+      [(Return e)                                                     ; if the entire block is just a single return, make a return x86 instruction for that expression
+            (make-ret-instr e)
+      ]
+      [(Seq first-line tailz)                                         ; if the remaining block is (Seq line (Seq line .....)), convert the line and recursively call unpack-seq on the tail of the block 
+        (append (make-instr first-line) (unpack-seq tailz))           ; both make-instr and unpack-seq return a list of the x86 instructions
+      ]
+    )
+  )
+
+  (define (make-pseudo-x86 blocks)
+    (for/fold ([instr-blocks-dict '()])
+              ([(label block) (in-dict blocks)])    ; go through each (label, block) in the body and converts the blocks from Cvar to pseudo-x86
+              (dict-set instr-blocks-dict label (Block '() (unpack-seq block)))
+    )
+  )
+
   (match p
     [(CProgram info body) (X86Program info (make-pseudo-x86 body))]
   )
 )
 
-(define (create-var-stack-dict info)
-  (for/fold ([var-stack-dict '()] [offset 0])
-            ([(var var-datatype) (in-dict info)]) 
-            (values (dict-set var-stack-dict var (- offset 8)) (- offset 8))))
-
-(define (format-offset total-offset)
-  ; (printf "format-offset total-offset: ~v\n\n" total-offset)
-  (cond 
-    [(zero? (remainder (- total-offset) 16)) (- total-offset)]
-    [else (+ 8 (- total-offset))]))
-
-(define (replace-var-with-stack block offset-dict)
-
-  (define (replace-each-arg arg)
-    (match arg
-      [(Var x) (Deref 'rbp (dict-ref offset-dict x))]
-      [_ arg]
-    )
-  )
-
-  (define (replace-exp exp)
-    (match exp
-      [(Instr name arg-list) (Instr name (for/list ([each-arg arg-list]) (replace-each-arg each-arg)))]
-      [_ exp]
-    )
-  )
-  (match block
-    [(Block info block-lines) (Block info (for/list ([line block-lines]) (replace-exp line)))])
-)
-
-(define (make-x86-var var-stack-dict body-dict)
-  ; (printf "in make-x86-var var-stack-dict \n~v\n" var-stack-dict)
-  (for/fold ([new-body-dict '()])
-            ([(label block) (in-dict body-dict)]) 
-            (dict-set new-body-dict label (replace-var-with-stack block var-stack-dict))
-  )
-)
 
 ;; assign-homes : pseudo-x86 -> pseudo-x86
 (define (assign-homes p)
+
+  (define (create-var-stack-dict info)                ; for each variable in locals-types, map it to the offset value from %rbp
+    (for/fold ([var-stack-dict '()] [offset 0])
+              ([(var var-datatype) (in-dict info)]) 
+              (values (dict-set var-stack-dict var (- offset 8)) (- offset 8))))
+
+  (define (format-offset total-offset)                ; calculate the total stack space that should be allocated, aligned to 16 bytes
+    (cond 
+      [(zero? (remainder (- total-offset) 16)) (- total-offset)]
+      [else (+ 8 (- total-offset))]))
+
+  (define (replace-var-with-stack block offset-dict)  ; replace variables in a block with their stack locations by looking up their offsets in offset-dict
+
+    (define (replace-each-arg arg)                    ; if an individual symbol is a variable, find its location on the stack
+      (match arg
+        [(Var x) (Deref 'rbp (dict-ref offset-dict x))]
+        [_ arg]
+      )
+    )
+
+    (define (replace-exp exp)                         ; for an expression, replace each argument with its stack location if it is a variable
+      (match exp
+        [(Instr name arg-list) (Instr name (for/list ([each-arg arg-list]) (replace-each-arg each-arg)))]
+        [_ exp]
+      )
+    )
+
+    (match block
+      [(Block info block-lines) (Block info (for/list ([line block-lines]) (replace-exp line)))])
+  )
+
+  (define (make-x86-var var-stack-dict body-dict)
+    (for/fold ([new-body-dict '()])
+              ([(label block) (in-dict body-dict)]) 
+              (dict-set new-body-dict label (replace-var-with-stack block var-stack-dict))
+    )
+  )
+
   (match p
     [(X86Program info body) 
         (let*-values (
-          [(var-stack-offsets total-offset) (create-var-stack-dict (dict-ref info 'locals-types))]          ; make a dict of each variable and the offset on the stack
-          [(new-info) (dict-set info 'stack-space (format-offset total-offset))]    ; add the total stack-space that is needed for all the variables
+          [(var-stack-offsets total-offset) (create-var-stack-dict (dict-ref info 'locals-types))]    ; make a dict of each variable and the offset on the stack
+          [(new-info) (dict-set '() 'stack-space (format-offset total-offset))]                       ; add the total stack-space that is needed for all the variables as the only entry in the info of the X86Program
         )
-        (X86Program new-info (make-x86-var var-stack-offsets body))               ; replace the variables in the body with the stack offsets
+        (X86Program new-info (make-x86-var var-stack-offsets body))   ; replace the variables in the body with the stack offsets
       )]
   )
 )
 
-(define (make-x86 body-dict)
-
-  (define (patch-line line)
-    (match line
-      [(Instr operator (list (Deref 'rbp offset1) (Deref 'rbp offset2)))
-                        (list
-                          (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
-                          (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
-      [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))
-        (list (Instr 'movq (list (Imm n) (Reg 'rax)))
-              (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
-        )
-      ]
-      [_ (list line)]
-    )
-  )
-
-  (define (patch-block block)
-    (match block
-      [(Block info block-lines) (Block info (
-          for/fold ([new-block-lines '()]) ([line block-lines]) (append new-block-lines (patch-line line))))])
-  )
-
-  (for/fold ([new-body-dict '()])
-            ([(label block) (in-dict body-dict)]) 
-            (dict-set new-body-dict label (patch-block block))
-  )
-)
 
 ;; patch-instructions : psuedo-x86 -> x86
 (define (patch-instructions p)
+
+  (define (make-x86 body-dict)
+
+    (define (patch-line line)
+      (match line
+        [(Instr operator (list (Deref 'rbp offset1) (Deref 'rbp offset2)))                  ; if the instruction operates on two stack locations, add %rax as an intermediate
+                          (list
+                            (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
+                            (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
+        [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))       ; if one of the immediate values is > 2^16, use rax as an intermediate (edge case mentioned in EoC)
+          (list (Instr 'movq (list (Imm n) (Reg 'rax)))
+                (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
+          )
+        ]
+        [_ (list line)]
+      )
+    )
+
+    (define (patch-block block)                                   ; patch each line with path-line and reconstruct the list of all instructions
+      (match block
+        [(Block info block-lines) (Block info (
+            for/fold ([new-block-lines '()]) ([line block-lines]) (append new-block-lines (patch-line line))))])  ; patch-line returns a list of the (patched) instructions
+    )
+
+    (for/fold ([new-body-dict '()])                               ; for each (label, block), patch each block
+              ([(label block) (in-dict body-dict)]) 
+              (dict-set new-body-dict label (patch-block block))
+    )
+  )
+
   (match p
     [(X86Program info body) (X86Program info (make-x86 body))]
   )
@@ -360,13 +360,13 @@
   
   (define (make-prelude-conclusion body-dict info)
 
-    (define main-body (Block '() (list
+    (define main-body (Block '() (list                                                        ; update rbp to rsp, move rsp to allocate stack space for all variables, jump to start
                         (Instr 'pushq (list (Reg 'rbp)))
                         (Instr 'movq (list (Reg 'rsp) (Reg 'rbp)))
                         (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
                         (Jmp 'start)
                         )))
-    (define conclusion-body (Block '() (list
+    (define conclusion-body (Block '() (list                                                  ; move rsp back to the rbp of this frame, get the rbp of previous frame, return
                         (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
                         (Instr 'popq (list (Reg 'rbp)))
                         (Retq)
