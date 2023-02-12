@@ -265,6 +265,87 @@
   )
 )
 
+(define (uncover-live p)
+
+  (define (is-var-reg? inp-arg)
+    (or (Var? inp-arg) (Reg? inp-arg))
+  )
+
+  (define (get-read-vars instr)
+    (match instr
+    [(Instr 'movq (list s d)) (if (is-var-reg? s) (set s) (set))]
+    [(Instr 'addq (list s d)) (if (is-var-reg? s) (set s d) (set d))]
+    [(Instr 'subq (list s d)) (if (is-var-reg? s) (set s d) (set d))]
+    [(Instr 'negq (list s)) (if (is-var-reg? s) (set s) (set))]
+    [(Jmp 'conclusion) (set (Reg 'rax) (Reg 'rsp))]
+    [_ (set)]
+    )
+  )
+
+  (define (get-write-vars instr)
+    (match instr
+    [(Instr instr (list s d)) (set d)]
+    [(Instr 'negq (list s)) (if (is-var-reg? s) (set s) (set))]
+    [(Jmp 'conclusion) (set)]
+    [_ (set)]
+    )
+  )
+
+  (define (calc-lbefore instr lafter)
+    ;lafter is the set lbefore of the next instruction
+    ;returns set for current instr
+    ;(printf "Calc before called for instr: ~v  with lafter: ~v\n" instr lafter)
+    (let ([read-vars (get-read-vars instr)]
+          [write-vars (get-write-vars instr)]
+    )
+    (set-union (set-subtract lafter write-vars) read-vars)
+    )
+    
+  )
+
+  (define (uncover-live-block-make-list block-body-list)
+    ; function that makes the lbefore for first instr in a block, and recursively makes lbefores for subsequent instructions
+    ; params: list of remaining instructions
+    ; returns: lbefores (a list of sets of live variables) for all remaining instructions
+    ; (printf "Recursive uncover-make-list called for ~v\n" (car block-body-list))
+    (match block-body-list
+        [(list singular-instr) (list (calc-lbefore singular-instr (set)))]          ; if only a single instruction is left, make lbefore for that instr, input lafter is null
+        [_ (let ([lafter (uncover-live-block-make-list (cdr block-body-list))])     ; recursively call this function to make the list of sets for all subsequent instructions
+                        (append (list (calc-lbefore (car block-body-list) (car lafter))) lafter))] ; get the lbefore of the first instruction with the last prepended lafter, and prepend it to lbefores of subsequent instructions
+                ; (append (list (calc-lbefore (car block-body-list) '())) lafter))] ; get the lbefore of the first instruction with the last prepended lafter, and prepend it to lbefores of subsequent instructions
+
+      )
+  )
+
+  (define (uncover-live-block-make-info block)
+    ; makes the info for each block to have a list of sets of live-after for each instruction
+    ; returns {"all-live-after": list(set(live-vars-instr-1), set(live-vars-instr-2), ....)}
+    (match block
+      [(Block info block-body) (Block (dict-set '() 'all-live-after
+                                        (uncover-live-block-make-list block-body))
+                                      block-body)]
+      ; (for/foldr ([all-live-after '()])
+      ; ([each-ins block-body])
+      ; (begin (printf "Each ins: ~v\n" each-ins)
+      ;       ()))]
+    ))
+  
+
+  (define (uncover-live-blocks blocks)
+    ; uncover-live-blocks adds liveness information to the info of each block in body
+    ; TODO take care of jmp instructions - lbefore of jmp should be lbefore of the first instruction of label you jmp to
+    (for/fold ([instr-blocks-dict '()])
+              ([(label block) (in-dict blocks)])    ; go through each (label, block) in the body
+              (dict-set instr-blocks-dict label (uncover-live-block-make-info block) )   ; update the info of every block
+              ; (dict-set instr-blocks-dict label (Block (dict-set '() "func" (list (set "oooo"))) block))   ; update the info of every block
+
+    )
+  )
+
+  (match p
+    [(X86Program info body) (X86Program info (uncover-live-blocks body))]
+  )
+)
 
 ;; assign-homes : pseudo-x86 -> pseudo-x86
 (define (assign-homes p)
@@ -391,6 +472,7 @@
      ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
      ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
      ("instruction selection", select-instructions, interp-pseudo-x86-0)
+     ("uncover live", uncover-live, interp-pseudo-x86-0)
      ("assign homes", assign-homes, interp-x86-0)
      ("patch instructions", patch-instructions, interp-x86-0)
      ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
