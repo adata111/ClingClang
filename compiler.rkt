@@ -493,21 +493,25 @@
 ;; assign-homes : pseudo-x86 -> pseudo-x86
 (define (assign-homes p)
 
-  (define (create-var-stack-dict info)                ; for each variable in locals-types, map it to the offset value from %rbp
-    (for/fold ([var-stack-dict '()] [offset 0])
-              ([(var var-datatype) (in-dict info)]) 
-              (values (dict-set var-stack-dict var (- offset 8)) (- offset 8))))
+  (define (create-var-location-dict color-map register-colors)                ; for each variable in locals-types, map to either the correct register or a stack location
+    (for/fold ([var-loc-dict '()] [offset 0])
+              ([(var var-color) (in-dict color-map)]) 
+              (if (dict-has-key? register-colors var-color)
+                  (values (dict-set var-loc-dict var (dict-ref register-colors var-color)) offset)
+                  (values (dict-set var-loc-dict var (Deref 'rbp (- offset 8))) (- offset 8)))
+              
+              ))
 
-  (define (format-offset total-offset)                ; calculate the total stack space that should be allocated, aligned to 16 bytes
+  (define (format-offset total-offset)                ; calculate the total stack space that should be allocated, aligned to 16 bytes. total-offset is negative
     (cond 
       [(zero? (remainder (- total-offset) 16)) (- total-offset)]
       [else (+ 8 (- total-offset))]))
 
-  (define (replace-var-with-stack block offset-dict)  ; replace variables in a block with their stack locations by looking up their offsets in offset-dict
+  (define (replace-var-with-loc block loc-dict)  ; replace variables in a block with their locations
 
-    (define (replace-each-arg arg)                    ; if an individual symbol is a variable, find its location on the stack
+    (define (replace-each-arg arg)                    ; if an individual symbol is a variable, find its location
       (match arg
-        [(Var x) (Deref 'rbp (dict-ref offset-dict x))]
+        [(Var x) (dict-ref loc-dict arg)]
         [_ arg]
       )
     )
@@ -523,20 +527,24 @@
       [(Block info block-lines) (Block info (for/list ([line block-lines]) (replace-exp line)))])
   )
 
-  (define (make-x86-var var-stack-dict body-dict)
+  (define (make-x86-var var-loc-dict body-dict)
     (for/fold ([new-body-dict '()])
               ([(label block) (in-dict body-dict)]) 
-              (dict-set new-body-dict label (replace-var-with-stack block var-stack-dict))
+              (dict-set new-body-dict label (replace-var-with-loc block var-loc-dict))
     )
   )
 
   (match p
     [(X86Program info body) 
         (let*-values (
-          [(var-stack-offsets total-offset) (create-var-stack-dict (dict-ref info 'locals-types))]    ; make a dict of each variable and the offset on the stack
-          [(new-info) (dict-set info 'stack-space (format-offset total-offset))]                       ; add the total stack-space that is needed for all the variables as the only entry in the info of the X86Program
-        )                       ; TODO using info just to debug later, replace info with '() to make new-info
-        (X86Program new-info (make-x86-var var-stack-offsets body))   ; replace the variables in the body with the stack offsets
+          [(register-colors) (list (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
+                                  (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
+                                  (cons 6 (Reg 'r10)) (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
+                                  (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]   ; the colors are mapped to these registers
+          [(var-locs total-offset) (create-var-location-dict (dict-ref info 'color-map) register-colors )]    ; make a dict of each variable and their locations
+          [(new-info) (dict-set info 'stack-space (format-offset total-offset))]    ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
+        )
+        (X86Program new-info (make-x86-var var-locs body))   ; replace the variables in the body with the locations
       )]
   )
 )
@@ -557,6 +565,7 @@
                 (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
           )
         ]
+        [(Instr 'movq (list (Reg s) (Reg d))) (if (equal? s d) (list) (list line))]         ; if it is a trivial movq, remove this line
         [_ (list line)]
       )
     )
@@ -616,7 +625,7 @@
      ("uncover live", uncover-live, interp-pseudo-x86-0)
      ("build interference", build-interference, interp-pseudo-x86-0)
      ("allocate registers", allocate-registers, interp-pseudo-x86-0)
-    ;  ("assign homes", assign-homes, interp-x86-0)
-    ;  ("patch instructions", patch-instructions, interp-x86-0)
+     ("assign homes", assign-homes, interp-x86-0)
+     ("patch instructions", patch-instructions, interp-x86-0)
     ;  ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
      ))
