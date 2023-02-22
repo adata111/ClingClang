@@ -404,51 +404,31 @@
   )
 )
 
-
-
-
-
 (define (allocate-registers p)
 
-  (define (get-lowest-available-color used-colors)
-    (for/first ([i (in-naturals)]
-                  #:when (not (set-member? used-colors i)))
-                  i))
+  (define (get-lowest-available-color used-colors)          ; finds the lowest available color after getting the colors of all neighboring colored nodes
+    (for/first ([i (in-naturals)]                           ; start searching from color 0
+                  #:when (not (set-member? used-colors i))) ; stop the for/first loop when a natural number is found that is not a used color
+                  i))                                       ; return this color
 
-  (define (propagate-color-to-neighbors vertex new-color neighbors old-adjacent-colors)
+  (define (propagate-color-to-neighbors vertex new-color neighbors old-adjacent-colors)   ; when a vertex is colored, update the adjacent-colors of all its neighbours
     (for/fold ([adjacent-colors old-adjacent-colors])
               ([neighbor neighbors])
-              (dict-set adjacent-colors neighbor (set-union (dict-ref adjacent-colors neighbor) (set new-color))))
+              (dict-set adjacent-colors neighbor
+                        (set-union (dict-ref adjacent-colors neighbor) (set new-color)))) ; get the current set of adjacent colors of the neighbour and add the color of the current vertex
   )
 
-  (define (update-pq priority-q vertex neighbors handle-map colors)
-    (for/fold ([temp '()])
-              ([neighbor neighbors]) ; TODO check if this has to be set of all non-neighbors
-              (begin (if (not (dict-has-key? colors neighbor)) (pqueue-decrease-key! priority-q (dict-ref handle-map neighbor)) neighbor) temp))
+  (define (update-pq priority-q vertex neighbors handle-map colors)   ; update the saturation of the vertices in the priority queue
+    (for ([neighbor neighbors])
+          (if (not (dict-has-key? colors neighbor))                               ; colored neighbors would not be in the priority queue
+                (pqueue-decrease-key! priority-q (dict-ref handle-map neighbor))  ; decrease the priority of the neighbour
+                neighbor))                                                        ; dummy else condition for the if block
   )
-
-  (define (color-graph self-colors old-graph adjacent-colors priority-q handle-map )
-    ; (printf "In color-graph\nself-colors:~v\nadjacent-colors:~v\npriority-q:~v\nhandle-map:~v\n----\n" self-colors adjacent-colors priority-q handle-map)
-
-    (if (equal? 0 (length (get-vertices old-graph))) self-colors
-    (let*-values (
-            [(num-neighbors vertex-handle) (pqueue-pop-node! priority-q)]
-            [(cur-vertex) (dict-ref handle-map vertex-handle)]
-            [(new-color) (get-lowest-available-color (dict-ref adjacent-colors cur-vertex))]
-            [(new-color-map) (dict-set self-colors cur-vertex new-color)]
-            [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex
-                                                                new-color
-                                                                (get-neighbors old-graph cur-vertex) 
-                                                                adjacent-colors)]
-            [(temp) (update-pq priority-q cur-vertex (get-neighbors old-graph cur-vertex) handle-map new-color-map)]
-            )
-            (color-graph new-color-map (begin (remove-vertex! old-graph cur-vertex) old-graph) new-adjacent-colors priority-q handle-map))
-  ))
 
   (define (get-colors-of-neighbors vertex old-graph colors) ; return a set containing the colours of the neighbors of vertex
     (for/fold ([adj-colors (set)])
               ([neighbor (get-neighbors old-graph vertex)])   ; go through each neighbor of the vertex
-              (if (dict-has-key? colors neighbor)          ; if the neighbor has a color, add it to the adjacent map of this vertex
+              (if (dict-has-key? colors neighbor)             ; if the neighbor has a color, add it to the adjacent map of this vertex
                           (set-union adj-colors (set (dict-ref colors neighbor)))
                   adj-colors)))
 
@@ -459,10 +439,10 @@
     )
   )
 
-  (define (add-to-pq-and-handle-map priority-q handle-map vertex num-adjacent colors)  ; add vertex to the pq, map the handle in the pq to the vertex
-    (if (dict-has-key? colors vertex) (values priority-q handle-map)
-      (let* ([new-handle (pqueue-push! priority-q num-adjacent)]
-            [new-handle-map (dict-set (dict-set handle-map
+  (define (add-to-pq-and-handle-map priority-q handle-map vertex num-adjacent colors)   ; add vertex to the pq, map the handle in the pq to the vertex
+    (if (dict-has-key? colors vertex) (values priority-q handle-map)                    ; if this vertex is colored already, do not add anything to the priority-q. Its mostly just going to be the registers that do not get allocated (rax, rsp, etc)
+      (let* ([new-handle (pqueue-push! priority-q num-adjacent)]                        ; push this vertex into the priority-q and get the handle
+            [new-handle-map (dict-set (dict-set handle-map                              ; set the dict[handle]=vertex and dict[vertex]=handle
                                       new-handle
                                       vertex) vertex new-handle)]
                                       )
@@ -471,20 +451,37 @@
   )                                  
 
   (define (initialize-pq vertices adjacent-map colors)
-    (for/fold ([priority-q (make-pqueue >)] [handle-map '()])
+    (for/fold ([priority-q (make-pqueue >)] [handle-map '()])                       ; initialize a priority queue and an empty handle-map
               ([vertex vertices])
-              (add-to-pq-and-handle-map priority-q handle-map vertex (set-count (dict-ref adjacent-map vertex)) colors))
+              (add-to-pq-and-handle-map priority-q handle-map vertex
+                                        (set-count (dict-ref adjacent-map vertex)) colors)) ; calculate the number of colored neighbors to use as the value for the priority queue
   )
 
-  (define (allocate-registers-blocks info old-graph)
-    ; (printf "Graph vertices:~v\nGraph edges:~v\n---\n" (get-vertices old-graph) (get-edges old-graph) )
+  (define (color-graph self-colors old-graph adjacent-colors priority-q handle-map )
+    (if (equal? 0 (length (get-vertices old-graph))) self-colors                              ; if there are no vertices left in the graph, return the color-map as it is
     (let*-values (
-            [(self-colors) (list (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1))]
-            [(adjacent-map) (initialize-adjacent old-graph (get-vertices old-graph) self-colors)]
-            [(priority-q handle-map) (initialize-pq (get-vertices old-graph) adjacent-map self-colors)]
+            [(num-neighbors vertex-handle) (pqueue-pop-node! priority-q)]                     ; get the handle of most saturated vertex from the priority queue
+            [(cur-vertex) (dict-ref handle-map vertex-handle)]                                ; use the handle of the priority queue to find the actual vertex in the handle-map
+            [(new-color) (get-lowest-available-color (dict-ref adjacent-colors cur-vertex))]  ; assign the lowest possible color to this variable
+            [(new-color-map) (dict-set self-colors cur-vertex new-color)]                     ; make a new color map with the newly assigned color of this variable
+            [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex                   ; rebuild the adjacent-colors map by propagating the color of this node to all of its neighbors
+                                                                new-color
+                                                                (get-neighbors old-graph cur-vertex) 
+                                                                adjacent-colors)]
+            [(_) (update-pq priority-q cur-vertex (get-neighbors old-graph cur-vertex) handle-map new-color-map)]  ; update the priority queue to take the new saturation values into account
+            )
+            (color-graph new-color-map (begin (remove-vertex! old-graph cur-vertex) old-graph)  ; remove the newly colored vertex from the graph and call color-graph recursively
+                          new-adjacent-colors priority-q handle-map))
+  ))
+
+  (define (allocate-registers-blocks info old-graph) ; performs the first call to color-graph by initializing the required values
+    (let*-values (
+            [(self-colors) (list (cons (Reg 'rbp) -3) (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1))]                            ; currently only these registers are mapped to colors
+            [(adjacent-map) (initialize-adjacent old-graph (get-vertices old-graph) self-colors)]       ; initialize the interfering colors for other variables due to the above registers
+            [(priority-q handle-map) (initialize-pq (get-vertices old-graph) adjacent-map self-colors)] ; initialize the priority queue to check the most saturated variables so far
           )
     (dict-set info 'color-map (color-graph self-colors
-                                          (begin (for ([i (in-dict-keys self-colors)]) (remove-vertex! old-graph i)) old-graph)
+                                          (begin (for ([i (in-dict-keys self-colors)]) (remove-vertex! old-graph i)) old-graph) ; remove the colored registers from the interference graph
                                           adjacent-map priority-q handle-map)))
   )
 
