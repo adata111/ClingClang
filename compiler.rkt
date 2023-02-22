@@ -2,6 +2,7 @@
 (require racket/set racket/stream)
 (require racket/fixnum)
 (require graph)
+(require "priority_queue.rkt")
 (require "interp.rkt")
 (require "interp-Lint.rkt")
 (require "interp-Lvar.rkt")
@@ -143,7 +144,6 @@
     [(Program info body) (CProgram info `((start . ,(explicate_tail body))))])
 )
 
-
 ;; select-instructions : C0 -> pseudo-x86
 (define (select-instructions p)
 
@@ -164,8 +164,8 @@
       ]
       [(Prim '+ (list arg1 arg2)) 
         (list 
-          (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Var x))) 
-          (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Var x)))
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x))) 
+          (Instr 'addq (list (atm-to-pseudo-x86 arg2) (Var x)))
         )
       ]
       [(Prim '- (list arg1 arg2)) 
@@ -209,8 +209,8 @@
       ]
       [(Prim '+ (list arg1 arg2)) 
         (list 
-          (Instr 'movq (list (atm-to-pseudo-x86 arg2) (Reg 'rax))) 
-          (Instr 'addq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
+          (Instr 'addq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
           (Jmp 'conclusion)
         )
       ]
@@ -295,14 +295,10 @@
   (define (calc-lbefore instr lafter)
     ;lafter is the set lbefore of the next instruction
     ;returns set for current instr
-    ;(printf "Calc before called for instr: ~v  with lafter: ~v\n" instr lafter)
+    ; (printf "Calc before called for instr: ~v  with lafter: ~v\n" instr lafter)
     (let ([read-vars (get-read-vars instr)]
-          [write-vars (get-write-vars instr)]
-    )
-    (set-union (set-subtract lafter write-vars) read-vars)
-    )
-    
-  )
+          [write-vars (get-write-vars instr)])
+          (set-union (set-subtract lafter write-vars) read-vars)))
 
   (define (uncover-live-block-make-list block-body-list)
     ; function that makes the lbefore for first instr in a block, and recursively makes lbefores for subsequent instructions
@@ -313,7 +309,6 @@
         [(list singular-instr) (list (calc-lbefore singular-instr (set)))]          ; if only a single instruction is left, make lbefore for that instr, input lafter is null
         [_ (let ([lafter (uncover-live-block-make-list (cdr block-body-list))])     ; recursively call this function to make the list of sets for all subsequent instructions
                         (append (list (calc-lbefore (car block-body-list) (car lafter))) lafter))] ; get the lbefore of the first instruction with the last prepended lafter, and prepend it to lbefores of subsequent instructions
-                ; (append (list (calc-lbefore (car block-body-list) '())) lafter))] ; get the lbefore of the first instruction with the last prepended lafter, and prepend it to lbefores of subsequent instructions
 
       )
   )
@@ -411,33 +406,90 @@
 
 
 
+
+
 (define (allocate-registers p)
 
-  (define (color-graph old-graph locals-types)
-    (printf "Interference:~v locals-types:~v\n" old-graph locals-types)
-    
-    ; (let-values ([(color-map adjacent-colors interference-graph)
-    ;               (for/fold ([color-map '()] [adjacent-colors '()] [interference-graph old-graph])
-    ;                         ([(local-var var-type) (in-dict locals-types)])
-    ;                         ; (begin (printf "Var:~v Type:~v Is in graph:~v\n"local-var var-type (has-vertex? interference-graph (Var local-var))) (values color-map adjacent-colors interference-graph))
-    ;                         (values color-map adjacent-colors interference-graph))])
-    ;               (color-map))
+  (define (get-lowest-available-color used-colors)
+    (for/first ([i (in-naturals)]
+                  #:when (not (set-member? used-colors i)))
+                  i))
 
-    (do ([interference-graph old-graph ()])
-        ((= 0 (length (get-vertices interference-graph))) END-OF-LOOP)
-        EACH-LOOP)
+  (define (propagate-color-to-neighbors vertex new-color neighbors old-adjacent-colors)
+    (for/fold ([adjacent-colors old-adjacent-colors])
+              ([neighbor neighbors])
+              (dict-set adjacent-colors neighbor (set-union (dict-ref adjacent-colors neighbor) (set new-color))))
   )
 
-  (define (allocate-registers-blocks info blocks)
-    ; (for/fold ([cur-info info])
-    ;           ([(local-var var-type) (in-dict (dict-ref info 'locals-types))])    ; go through each variable in locals-types
-    ;           (begin (printf "Var:~v Type:~v Is in graph:~v\n"local-var var-type (has-vertex? (dict-ref info 'conflicts) (Var local-var))) cur-info)   ; build the interference graph of the entire program by going through each block
-    ; )
-    (dict-set info 'color-map (color-graph (dict-ref info 'conflicts) (dict-ref info 'locals-types)))
+  (define (update-pq priority-q vertex neighbors handle-map colors)
+    (for/fold ([temp '()])
+              ([neighbor neighbors]) ; TODO check if this has to be set of all non-neighbors
+              (begin (if (not (dict-has-key? colors neighbor)) (pqueue-decrease-key! priority-q (dict-ref handle-map neighbor)) neighbor) temp))
+  )
+
+  (define (color-graph self-colors old-graph adjacent-colors priority-q handle-map )
+    ; (printf "In color-graph\nself-colors:~v\nadjacent-colors:~v\npriority-q:~v\nhandle-map:~v\n----\n" self-colors adjacent-colors priority-q handle-map)
+
+    (if (equal? 0 (length (get-vertices old-graph))) self-colors
+    (let*-values (
+            [(num-neighbors vertex-handle) (pqueue-pop-node! priority-q)]
+            [(cur-vertex) (dict-ref handle-map vertex-handle)]
+            [(new-color) (get-lowest-available-color (dict-ref adjacent-colors cur-vertex))]
+            [(new-color-map) (dict-set self-colors cur-vertex new-color)]
+            [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex
+                                                                new-color
+                                                                (get-neighbors old-graph cur-vertex) 
+                                                                adjacent-colors)]
+            [(temp) (update-pq priority-q cur-vertex (get-neighbors old-graph cur-vertex) handle-map new-color-map)]
+            )
+            (color-graph new-color-map (begin (remove-vertex! old-graph cur-vertex) old-graph) new-adjacent-colors priority-q handle-map))
+  ))
+
+  (define (get-colors-of-neighbors vertex old-graph colors) ; return a set containing the colours of the neighbors of vertex
+    (for/fold ([adj-colors (set)])
+              ([neighbor (get-neighbors old-graph vertex)])   ; go through each neighbor of the vertex
+              (if (dict-has-key? colors neighbor)          ; if the neighbor has a color, add it to the adjacent map of this vertex
+                          (set-union adj-colors (set (dict-ref colors neighbor)))
+                  adj-colors)))
+
+  (define (initialize-adjacent old-graph vertices self-colors)  ; will return a dictionary where each vertex has the colors of it's neighbors
+    (for/fold ([adjacent-map '()])
+              ([vertex vertices])    ; go through each vertex to initialize its adjacent map
+              (dict-set adjacent-map vertex (get-colors-of-neighbors vertex old-graph self-colors))
+    )
+  )
+
+  (define (add-to-pq-and-handle-map priority-q handle-map vertex num-adjacent colors)  ; add vertex to the pq, map the handle in the pq to the vertex
+    (if (dict-has-key? colors vertex) (values priority-q handle-map)
+      (let* ([new-handle (pqueue-push! priority-q num-adjacent)]
+            [new-handle-map (dict-set (dict-set handle-map
+                                      new-handle
+                                      vertex) vertex new-handle)]
+                                      )
+            (values priority-q new-handle-map)) ; return values to be unpacked by a let*-values in allocate-registers-blocks where this is called
+    )
+  )                                  
+
+  (define (initialize-pq vertices adjacent-map colors)
+    (for/fold ([priority-q (make-pqueue >)] [handle-map '()])
+              ([vertex vertices])
+              (add-to-pq-and-handle-map priority-q handle-map vertex (set-count (dict-ref adjacent-map vertex)) colors))
+  )
+
+  (define (allocate-registers-blocks info old-graph)
+    ; (printf "Graph vertices:~v\nGraph edges:~v\n---\n" (get-vertices old-graph) (get-edges old-graph) )
+    (let*-values (
+            [(self-colors) (list (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1))]
+            [(adjacent-map) (initialize-adjacent old-graph (get-vertices old-graph) self-colors)]
+            [(priority-q handle-map) (initialize-pq (get-vertices old-graph) adjacent-map self-colors)]
+          )
+    (dict-set info 'color-map (color-graph self-colors
+                                          (begin (for ([i (in-dict-keys self-colors)]) (remove-vertex! old-graph i)) old-graph)
+                                          adjacent-map priority-q handle-map)))
   )
 
   (match p
-    [(X86Program info body) (X86Program (allocate-registers-blocks info body) body)]
+    [(X86Program info body) (X86Program (allocate-registers-blocks info (dict-ref info 'conflicts)) body)]
   )
 )
 
@@ -553,7 +605,6 @@
     [(X86Program info body) (X86Program info (make-prelude-conclusion body info))]
   )
 )
-
 
 ;; Define the compiler passes to be used by interp-tests and the grader
 ;; Note that your compiler file (the file that defines the passes)
