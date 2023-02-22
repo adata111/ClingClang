@@ -288,6 +288,7 @@
       [(Instr instr (list s d)) (set d)]
       [(Instr 'negq (list s)) (if (is-var-reg? s) (set s) (set))]
       [(Jmp 'conclusion) (set)]
+      [(Callq call-label arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [_ (set)]
     )
   ) ; Duplicated again inside build-interference
@@ -352,6 +353,7 @@
       [(Instr instr (list s d)) (set d)]
       [(Instr 'negq (list s)) (if (is-var-reg? s) (set s) (set))]
       [(Jmp 'conclusion) (set)]
+      [(Callq call-label arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [_ (set)]
     )) ; Duplicated from uncover-live
 
@@ -474,15 +476,48 @@
                           new-adjacent-colors priority-q handle-map))
   ))
 
+  (define (get-used-callee all-callee color-map)
+    (for/fold ([used-callees '()])
+              ([(var var-color) (in-dict color-map)]) 
+              (if (and (dict-has-key? all-callee var-color) (> var-color -1))
+                  (append used-callees (list (dict-ref all-callee var-color)))
+                  used-callees
+              )
+    )
+  )
+
+  (define (get-used-caller all-caller color-map)
+    (for/fold ([used-callers '()])
+              ([(var var-color) (in-dict color-map)]) 
+              (if (and (dict-has-key? all-caller var-color) (> var-color -1))
+                  (append used-callers (list (dict-ref all-caller var-color)))
+                  used-callers
+              )
+    )
+  )
+
+  (define (make-used-caller-even regs)
+    (if (zero? (remainder (length regs) 2)) regs (cons (car regs) regs))
+  )
+
   (define (allocate-registers-blocks info old-graph) ; performs the first call to color-graph by initializing the required values
     (let*-values (
-            [(self-colors) (list (cons (Reg 'rbp) -3) (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1))]                            ; currently only these registers are mapped to colors
+            [(callee-saved) (list (cons -5 (Reg 'r15)) (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp))
+                                    (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
+                                    (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]
+            [(caller-saved) (list (cons -4 (Reg 'r11)) (cons -1 (Reg 'rax))
+                                    (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
+                                    (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
+                                    (cons 6 (Reg 'r10)))]
+            [(self-colors) (list (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1))]                            ; currently only these registers are mapped to colors
             [(adjacent-map) (initialize-adjacent old-graph (get-vertices old-graph) self-colors)]       ; initialize the interfering colors for other variables due to the above registers
             [(priority-q handle-map) (initialize-pq (get-vertices old-graph) adjacent-map self-colors)] ; initialize the priority queue to check the most saturated variables so far
-          )
-    (dict-set info 'color-map (color-graph self-colors
-                                          (begin (for ([i (in-dict-keys self-colors)]) (remove-vertex! old-graph i)) old-graph) ; remove the colored registers from the interference graph
-                                          adjacent-map priority-q handle-map)))
+            [(info-colormap) (dict-set info 'color-map (color-graph self-colors
+                                                  (begin (for ([i (in-dict-keys self-colors)]) (remove-vertex! old-graph i)) old-graph) ; remove the colored registers from the interference graph
+                                                  adjacent-map priority-q handle-map))]
+            [(info-callee) (dict-set info-colormap 'used-callee (set->list (list->set (get-used-callee callee-saved (dict-ref info-colormap 'color-map) ))))]
+            [(info-caller) (dict-set info-callee 'used-caller (make-used-caller-even (set->list (list->set (get-used-caller caller-saved (dict-ref info-callee 'color-map) )))))]
+    ) info-caller)
   )
 
   (match p
@@ -493,19 +528,30 @@
 ;; assign-homes : pseudo-x86 -> pseudo-x86
 (define (assign-homes p)
 
-  (define (create-var-location-dict color-map register-colors)                ; for each variable in locals-types, map to either the correct register or a stack location
-    (for/fold ([var-loc-dict '()] [offset 0])
+  (define (create-var-location-dict color-map register-colors num-callee)                ; for each variable in locals-types, map to either the correct register or a stack location
+    (for/fold ([var-loc-dict '()] [offset (* num-callee -8)] [color-to-stack '()])
               ([(var var-color) (in-dict color-map)]) 
               (if (dict-has-key? register-colors var-color)
-                  (values (dict-set var-loc-dict var (dict-ref register-colors var-color)) offset)
-                  (values (dict-set var-loc-dict var (Deref 'rbp (- offset 8))) (- offset 8)))
-              
+                  (values (dict-set var-loc-dict var (dict-ref register-colors var-color)) offset color-to-stack)
+                  (if (dict-has-key? color-to-stack var-color)
+                      (values (dict-set var-loc-dict var (Deref 'rbp (dict-ref color-to-stack var-color))) offset color-to-stack)
+                      (let ([new-offset (- offset 8)])
+                          (values (dict-set var-loc-dict var (Deref 'rbp new-offset))
+                                  new-offset
+                                  (dict-set color-to-stack var-color new-offset)))
+                  )
+                )
               ))
 
-  (define (format-offset total-offset)                ; calculate the total stack space that should be allocated, aligned to 16 bytes. total-offset is negative
-    (cond 
-      [(zero? (remainder (- total-offset) 16)) (- total-offset)]
-      [else (+ 8 (- total-offset))]))
+  (define (format-offset total-offset num-callee)                ; calculate the total stack space that should be allocated, aligned to 16 bytes. total-offset is negative
+    (let 
+      ([aligned-offset-tot (cond 
+                            [(zero? (remainder (- total-offset) 16)) (- total-offset)]
+                            [else (+ 8 (- total-offset))])
+        ])
+      (- aligned-offset-tot (* 8 num-callee))
+    )
+  )
 
   (define (replace-var-with-loc block loc-dict)  ; replace variables in a block with their locations
 
@@ -537,12 +583,14 @@
   (match p
     [(X86Program info body) 
         (let*-values (
-          [(register-colors) (list (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
-                                  (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
-                                  (cons 6 (Reg 'r10)) (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
-                                  (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]   ; the colors are mapped to these registers
-          [(var-locs total-offset) (create-var-location-dict (dict-ref info 'color-map) register-colors )]    ; make a dict of each variable and their locations
-          [(new-info) (dict-set info 'stack-space (format-offset total-offset))]    ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
+          [(register-colors) (list  (cons -5 (Reg 'r15)) (cons -4 (Reg 'r11))
+                                    (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp)) (cons -1 (Reg 'rax))
+                                    (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
+                                    (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
+                                    (cons 6 (Reg 'r10)) (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
+                                    (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]   ; the colors are mapped to these registers
+          [(var-locs total-offset temp) (create-var-location-dict (dict-ref info 'color-map) register-colors (length (dict-ref info 'used-callee)))]    ; make a dict of each variable and their locations
+          [(new-info) (dict-set info 'stack-space (format-offset total-offset (length (dict-ref info 'used-callee))))]    ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
         )
         (X86Program new-info (make-x86-var var-locs body))   ; replace the variables in the body with the locations
       )]
@@ -552,7 +600,7 @@
 ;; patch-instructions : psuedo-x86 -> x86
 (define (patch-instructions p)
 
-  (define (make-x86 body-dict)
+  (define (make-x86 body-dict info)
 
     (define (patch-line line)
       (match line
@@ -566,6 +614,10 @@
           )
         ]
         [(Instr 'movq (list (Reg s) (Reg d))) (if (equal? s d) (list) (list line))]         ; if it is a trivial movq, remove this line
+        [(Callq call-label arity) (append (for/list ([reg (dict-ref info 'used-caller)]) (Instr 'pushq (list reg)))
+                                          (list line)
+                                          (foldl cons empty (for/list ([reg (dict-ref info 'used-caller)]) (Instr 'popq (list reg))))
+                                          )]
         [_ (list line)]
       )
     )
@@ -583,7 +635,7 @@
   )
 
   (match p
-    [(X86Program info body) (X86Program info (make-x86 body))]
+    [(X86Program info body) (X86Program info (make-x86 body info))]
   )
 )
 
@@ -592,17 +644,35 @@
   
   (define (make-prelude-conclusion body-dict info)
 
-    (define main-body (Block '() (list                                                        ; update rbp to rsp, move rsp to allocate stack space for all variables, jump to start
-                        (Instr 'pushq (list (Reg 'rbp)))
-                        (Instr 'movq (list (Reg 'rsp) (Reg 'rbp)))
-                        (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
-                        (Jmp 'start)
-                        )))
-    (define conclusion-body (Block '() (list                                                  ; move rsp back to the rbp of this frame, get the rbp of previous frame, return
-                        (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
-                        (Instr 'popq (list (Reg 'rbp)))
-                        (Retq)
-                        )))
+    (define push-used-callees 
+      (for/fold ([push-callee-instrs '()])                               
+                ([callee  (dict-ref info 'used-callee)]) 
+                (append push-callee-instrs (list (Instr 'pushq (list callee))))
+      )
+    )
+
+    (define pop-used-callees 
+      (for/fold ([pop-callee-instrs '()])                               
+                ([callee  (dict-ref info 'used-callee)]) 
+                (append (list (Instr 'popq (list callee))) pop-callee-instrs)
+      )
+    )
+
+    (define main-body (Block '() (append 
+                                  (list                                                        ; update rbp to rsp, move rsp to allocate stack space for all variables, jump to start
+                                  (Instr 'pushq (list (Reg 'rbp))) (Instr 'movq (list (Reg 'rsp) (Reg 'rbp))))
+                                  push-used-callees
+                                  (list (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))) (Jmp 'start))
+                        ))
+    )
+
+    (define conclusion-body (Block '() (append (list                                                  ; move rsp back to the rbp of this frame, get the rbp of previous frame, return
+                                                  (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))))
+                                                pop-used-callees
+                                                (list (Instr 'popq (list (Reg 'rbp)))
+                                                  (Retq))
+                        ))
+    )
 
     (dict-set (dict-set body-dict 'main main-body) 'conclusion conclusion-body )
   )
@@ -627,5 +697,5 @@
      ("allocate registers", allocate-registers, interp-pseudo-x86-0)
      ("assign homes", assign-homes, interp-x86-0)
      ("patch instructions", patch-instructions, interp-x86-0)
-    ;  ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+     ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
      ))
