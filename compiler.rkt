@@ -305,7 +305,6 @@
     ; function that makes the lbefore for first instr in a block, and recursively makes lbefores for subsequent instructions
     ; params: list of remaining instructions
     ; returns: lbefores (a list of sets of live variables) for all remaining instructions
-    ; (printf "Recursive uncover-make-list called for ~v\n" (car block-body-list))
     (match block-body-list
         [(list singular-instr) (list (calc-lbefore singular-instr (set)))]          ; if only a single instruction is left, make lbefore for that instr, input lafter is null
         [_ (let ([lafter (uncover-live-block-make-list (cdr block-body-list))])     ; recursively call this function to make the list of sets for all subsequent instructions
@@ -321,10 +320,6 @@
       [(Block info block-body) (Block (dict-set '() 'all-live-after
                                         (uncover-live-block-make-list block-body))
                                       block-body)]
-      ; (for/foldr ([all-live-after '()])
-      ; ([each-ins block-body])
-      ; (begin (printf "Each ins: ~v\n" each-ins)
-      ;       ()))]
     ))
   
 
@@ -334,7 +329,6 @@
     (for/fold ([instr-blocks-dict '()])
               ([(label block) (in-dict blocks)])    ; go through each (label, block) in the body
               (dict-set instr-blocks-dict label (uncover-live-block-make-info block) )   ; update the info of every block
-              ; (dict-set instr-blocks-dict label (Block (dict-set '() "func" (list (set "oooo"))) block))   ; update the info of every block
     )
   )
 
@@ -355,7 +349,8 @@
       [(Jmp 'conclusion) (set)]
       [(Callq call-label arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [_ (set)]
-    )) ; Duplicated from uncover-live
+    )
+  ) ; Duplicated from uncover-live
 
   (define (check-add-if-edge-interference instr live-loc interference-graph)
     ; (printf "  Instr: ~v  L-after-elem: ~v\n  ---\n" instr live-loc)
@@ -409,9 +404,9 @@
 (define (allocate-registers p)
 
   (define (get-lowest-available-color used-colors)          ; finds the lowest available color after getting the colors of all neighboring colored nodes
-    (for/first ([i (in-naturals)]                           ; start searching from color 0
-                  #:when (not (set-member? used-colors i))) ; stop the for/first loop when a natural number is found that is not a used color
-                  i))                                       ; return this color
+    (for/first ([i (in-naturals)]                           ; start searching from color 0
+                  #:when (not (set-member? used-colors i))) ; stop the for/first loop when a natural number is found that is not a used color
+                  i))                                       ; return this color
 
   (define (propagate-color-to-neighbors vertex new-color neighbors old-adjacent-colors)   ; when a vertex is colored, update the adjacent-colors of all its neighbours
     (for/fold ([adjacent-colors old-adjacent-colors])
@@ -460,8 +455,8 @@
   )
 
   (define (color-graph self-colors old-graph adjacent-colors priority-q handle-map )
-    (if (equal? 0 (length (get-vertices old-graph))) self-colors                              ; if there are no vertices left in the graph, return the color-map as it is
-    (let*-values (
+    (if (equal? 0 (pqueue-count priority-q)) self-colors                              ; if there are no vertices left in the priority-q, return the color-map as it is
+    (let*-values (
             [(num-neighbors vertex-handle) (pqueue-pop-node! priority-q)]                     ; get the handle of most saturated vertex from the priority queue
             [(cur-vertex) (dict-ref handle-map vertex-handle)]                                ; use the handle of the priority queue to find the actual vertex in the handle-map
             [(new-color) (get-lowest-available-color (dict-ref adjacent-colors cur-vertex))]  ; assign the lowest possible color to this variable
@@ -472,36 +467,20 @@
                                                                 adjacent-colors)]
             [(_) (update-pq priority-q cur-vertex (get-neighbors old-graph cur-vertex) handle-map new-color-map)]  ; update the priority queue to take the new saturation values into account
             )
-            (color-graph new-color-map (begin (remove-vertex! old-graph cur-vertex) old-graph)  ; remove the newly colored vertex from the graph and call color-graph recursively
+            (color-graph new-color-map old-graph  ; remove the newly colored vertex from the graph and call color-graph recursively
                           new-adjacent-colors priority-q handle-map))
   ))
 
-  (define (get-used-callee all-callee color-map)
+  (define (get-used-callee all-callee color-map)                                  ; get all the used callee-saved registers
     (for/fold ([used-callees '()])
-              ([(var var-color) (in-dict color-map)]) 
-              (if (and (dict-has-key? all-callee var-color) (> var-color -1))
-                  (append used-callees (list (dict-ref all-callee var-color)))
+              ([(var var-color) (in-dict color-map)])                             ; go through all the entries in color-map, each entry is the var/reg and its color
+              (if (and (dict-has-key? all-callee var-color) (> var-color -1) (not (Reg? var)))  ; if this color corresponds to a callee-saved, and the color corresponds to a Reg that can be allocated, and the entry is not the register itself
+                  (append used-callees (list (dict-ref all-callee var-color)))                  ; then this is a used callee-saved register
                   used-callees
-              )
-    )
-  )
-
-  (define (get-used-caller all-caller color-map)
-    (for/fold ([used-callers '()])
-              ([(var var-color) (in-dict color-map)]) 
-              (if (and (dict-has-key? all-caller var-color) (> var-color -1))
-                  (append used-callers (list (dict-ref all-caller var-color)))
-                  used-callers
-              )
-    )
-  )
-
-  (define (make-used-caller-even regs)
-    (if (zero? (remainder (length regs) 2)) regs (cons (car regs) regs))
-  )
+              )))
 
   (define (allocate-registers-blocks info old-graph) ; performs the first call to color-graph by initializing the required values
-    (let*-values (
+    (let*-values (
             [(callee-saved) (list (cons -5 (Reg 'r15)) (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp))
                                     (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
                                     (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]
@@ -509,15 +488,19 @@
                                     (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
                                     (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
                                     (cons 6 (Reg 'r10)))]
-            [(self-colors) (list (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1))]                            ; currently only these registers are mapped to colors
-            [(adjacent-map) (initialize-adjacent old-graph (get-vertices old-graph) self-colors)]       ; initialize the interfering colors for other variables due to the above registers
+            [(self-colors) (list  (cons (Reg 'r15) -5) (cons (Reg 'r11) -4)
+                                    (cons (Reg 'rbp) -3) (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1)
+                                    (cons (Reg 'rcx) 0) (cons (Reg 'rdx) 1) (cons (Reg 'rsi) 2)
+                                    (cons (Reg 'rdi) 3) (cons (Reg 'r8) 4) (cons (Reg 'r9) 5)
+                                    (cons (Reg 'r10) 6) (cons (Reg 'rbx) 7) (cons (Reg 'r12) 8)
+                                    (cons (Reg 'r13) 9) (cons (Reg 'r14) 10))]                          ; currently these registers are mapped to colors
+            [(adjacent-map) (initialize-adjacent old-graph (get-vertices old-graph) self-colors)]       ; initialize the interfering colors for other variables due to the above registers
             [(priority-q handle-map) (initialize-pq (get-vertices old-graph) adjacent-map self-colors)] ; initialize the priority queue to check the most saturated variables so far
-            [(info-colormap) (dict-set info 'color-map (color-graph self-colors
-                                                  (begin (for ([i (in-dict-keys self-colors)]) (remove-vertex! old-graph i)) old-graph) ; remove the colored registers from the interference graph
+            [(info-colormap) (dict-set info 'color-map (color-graph self-colors
+                                                  old-graph
                                                   adjacent-map priority-q handle-map))]
-            [(info-callee) (dict-set info-colormap 'used-callee (set->list (list->set (get-used-callee callee-saved (dict-ref info-colormap 'color-map) ))))]
-            [(info-caller) (dict-set info-callee 'used-caller (make-used-caller-even (set->list (list->set (get-used-caller caller-saved (dict-ref info-callee 'color-map) )))))]
-    ) info-caller)
+            [(info-callee) (dict-set info-colormap 'used-callee (set->list (list->set (get-used-callee callee-saved (dict-ref info-colormap 'color-map) ))))] ; get the used callee-saved registers and deduplicate the list by converting to a set
+          ) info-callee)
   )
 
   (match p
@@ -528,20 +511,18 @@
 ;; assign-homes : pseudo-x86 -> pseudo-x86
 (define (assign-homes p)
 
-  (define (create-var-location-dict color-map register-colors num-callee)                ; for each variable in locals-types, map to either the correct register or a stack location
-    (for/fold ([var-loc-dict '()] [offset (* num-callee -8)] [color-to-stack '()])
+  (define (create-var-location-dict color-map register-colors num-callee)                 ; for each variable in locals-types, map to either the correct register or a stack location
+    (for/fold ([var-loc-dict '()] [offset (* num-callee -8)] [color-to-stack '()])        ; initialize the offset by the stack space used by pushing the callee-saved registers since callee-saved registers are pushed before the variables on the stack
               ([(var var-color) (in-dict color-map)]) 
-              (if (dict-has-key? register-colors var-color)
-                  (values (dict-set var-loc-dict var (dict-ref register-colors var-color)) offset color-to-stack)
-                  (if (dict-has-key? color-to-stack var-color)
-                      (values (dict-set var-loc-dict var (Deref 'rbp (dict-ref color-to-stack var-color))) offset color-to-stack)
-                      (let ([new-offset (- offset 8)])
+              (if (dict-has-key? register-colors var-color)                               ; if this is a color that corresponds to a register location
+                  (values (dict-set var-loc-dict var (dict-ref register-colors var-color)) offset color-to-stack) ; use the register. Otherwise it is a stack location
+                  (if (dict-has-key? color-to-stack var-color)                            ; check if this particular stack location has already been allocated in the offset
+                      (values (dict-set var-loc-dict var (Deref 'rbp (dict-ref color-to-stack var-color))) offset color-to-stack) ; if it has already been allocated, use the same stack location by checking in color-to-stack
+                      (let ([new-offset (- offset 8)])                                    ; otherwise, allocate space for this stack location to the offset
                           (values (dict-set var-loc-dict var (Deref 'rbp new-offset))
                                   new-offset
-                                  (dict-set color-to-stack var-color new-offset)))
-                  )
-                )
-              ))
+                                  (dict-set color-to-stack var-color new-offset))))       ; save to color-to-stack that this stack location has been allocated space
+                  )))
 
   (define (format-offset total-offset num-callee)                ; calculate the total stack space that should be allocated, aligned to 16 bytes. total-offset is negative
     (let 
@@ -553,16 +534,16 @@
     )
   )
 
-  (define (replace-var-with-loc block loc-dict)  ; replace variables in a block with their locations
+  (define (replace-var-with-loc block loc-dict)   ; replace variables in a block with their locations
 
-    (define (replace-each-arg arg)                    ; if an individual symbol is a variable, find its location
+    (define (replace-each-arg arg)                ; if an individual symbol is a variable, find its location
       (match arg
         [(Var x) (dict-ref loc-dict arg)]
         [_ arg]
       )
     )
 
-    (define (replace-exp exp)                         ; for an expression, replace each argument with its stack location if it is a variable
+    (define (replace-exp exp)                     ; for an expression, replace each argument with its stack location if it is a variable
       (match exp
         [(Instr name arg-list) (Instr name (for/list ([each-arg arg-list]) (replace-each-arg each-arg)))]
         [_ exp]
@@ -588,9 +569,9 @@
                                     (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
                                     (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
                                     (cons 6 (Reg 'r10)) (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
-                                    (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]   ; the colors are mapped to these registers
-          [(var-locs total-offset temp) (create-var-location-dict (dict-ref info 'color-map) register-colors (length (dict-ref info 'used-callee)))]    ; make a dict of each variable and their locations
-          [(new-info) (dict-set info 'stack-space (format-offset total-offset (length (dict-ref info 'used-callee))))]    ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
+                                    (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]                        ; the colors are mapped to these registers
+          [(var-locs total-offset temp) (create-var-location-dict (dict-ref info 'color-map) register-colors (length (dict-ref info 'used-callee)))]  ; make a dict of each variable and their locations
+          [(new-info) (dict-set info 'stack-space (format-offset total-offset (length (dict-ref info 'used-callee))))]        ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
         )
         (X86Program new-info (make-x86-var var-locs body))   ; replace the variables in the body with the locations
       )]
@@ -614,10 +595,6 @@
           )
         ]
         [(Instr 'movq (list (Reg s) (Reg d))) (if (equal? s d) (list) (list line))]         ; if it is a trivial movq, remove this line
-        [(Callq call-label arity) (append (for/list ([reg (dict-ref info 'used-caller)]) (Instr 'pushq (list reg)))
-                                          (list line)
-                                          (foldl cons empty (for/list ([reg (dict-ref info 'used-caller)]) (Instr 'popq (list reg))))
-                                          )]
         [_ (list line)]
       )
     )
@@ -644,34 +621,30 @@
   
   (define (make-prelude-conclusion body-dict info)
 
-    (define push-used-callees 
+    (define push-used-callees                             ; construct the instructions to push all the used callee-saved registers in the prelude
       (for/fold ([push-callee-instrs '()])                               
-                ([callee  (dict-ref info 'used-callee)]) 
+                ([callee (dict-ref info 'used-callee)]) 
                 (append push-callee-instrs (list (Instr 'pushq (list callee))))
       )
     )
 
-    (define pop-used-callees 
+    (define pop-used-callees                              ; construct the instructions to pop all the used callee-saved registers in the conclusion
       (for/fold ([pop-callee-instrs '()])                               
-                ([callee  (dict-ref info 'used-callee)]) 
+                ([callee (dict-ref info 'used-callee)]) 
                 (append (list (Instr 'popq (list callee))) pop-callee-instrs)
       )
     )
 
-    (define main-body (Block '() (append 
-                                  (list                                                        ; update rbp to rsp, move rsp to allocate stack space for all variables, jump to start
-                                  (Instr 'pushq (list (Reg 'rbp))) (Instr 'movq (list (Reg 'rsp) (Reg 'rbp))))
-                                  push-used-callees
-                                  (list (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))) (Jmp 'start))
-                        ))
+    (define main-body       (Block '() (append            ; update rbp to rsp, push used callee-saved registers, move rsp to allocate stack space for all variables, jump to start
+                                        (list (Instr 'pushq (list (Reg 'rbp))) (Instr 'movq (list (Reg 'rsp) (Reg 'rbp))))
+                                        push-used-callees
+                                        (list (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))) (Jmp 'start))))
     )
 
-    (define conclusion-body (Block '() (append (list                                                  ; move rsp back to the rbp of this frame, get the rbp of previous frame, return
-                                                  (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))))
-                                                pop-used-callees
-                                                (list (Instr 'popq (list (Reg 'rbp)))
-                                                  (Retq))
-                        ))
+    (define conclusion-body (Block '() (append      ; move rsp back to the rbp of this frame, pop all used callee-saved registers, get the rbp of previous frame, return
+                                        (list (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))))
+                                        pop-used-callees
+                                        (list (Instr 'popq (list (Reg 'rbp))) (Retq))))
     )
 
     (dict-set (dict-set body-dict 'main main-body) 'conclusion conclusion-body )
