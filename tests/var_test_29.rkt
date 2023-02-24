@@ -1,0 +1,8 @@
+(let ([g (read)])
+(+ 1 (let ([h (read)])
+(let ([i (read)])
+(let ([j (read)])
+(let ([k (+ i j)])
+(let ([l (- k)])
+(let ([m (read)])
+(+ g m)))))))))

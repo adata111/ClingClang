@@ -1,0 +1,6 @@
+(let ([x 10])
+    (let ([y 20])
+        (+ (read) (let ([z (- (read))])
+                        (- x (let ([a 2])
+                            (+ y (let([b 6]) 
+                                (+ a (- b (let([c 6]) (+ (+ 35 (- z c)) (read)))))))))))))
