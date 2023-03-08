@@ -7,42 +7,61 @@
 (require "interp-Lint.rkt")
 (require "interp-Lvar.rkt")
 (require "interp-Cvar.rkt")
+(require "interp-Lif.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
+(require "type-check-Lif.rkt")
 (require "utilities.rkt")
 (provide (all-defined-out))
 
-(define (uniquify-exp env)
-  (lambda (e)
-    (match e
+(define (shrink p)            ; converts 'and and 'or to `If` statements, recursively calls itself on every other operation
 
-      [(Var x)                          ; if the expression is a Var struct, find the referenced value of the Var-struct's symbol in the environment
-        (dict-ref env x)]
+  (define (shrink-body body)
+    (match body
+      [(Let x e letbody) (Let x (shrink-body e) (shrink-body letbody))]
+      [(If cnd e1 e2) (If (shrink-body cnd) (shrink-body e1) (shrink-body e2))]
+      [(Prim 'and (list e1 e2)) (If e1 e2 (Bool #f))]
+      [(Prim 'or (list e1 e2)) (If e1 (Bool #t) e2)]
+      [(Prim op args)
+        (Prim op (for/list ([e args]) (shrink-body e)))]
+      [_ body]
+    )
+  )
 
-      [(Int n) (Int n)]                 ; if the expression is an Int struct object, just return the same
+  (match p
+    [(Program info body) (Program info (shrink-body body))])
+)
 
-      [(Let x e body)
-        (cond                           ; check if the symbol being defined by Let already has another reference in the environment
-        [(dict-has-key? env x)          ; if key already exists in env, make a new symbol for this key and save in environment
-            (let ([new-sym (gensym x)])                                                 ; generate new symbol for x
-              (let ([new-env (dict-set env x (Var new-sym))])                           ; make a new environment mapping x to Var struct of new-sym
-                (Let new-sym ((uniquify-exp new-env) e) ((uniquify-exp new-env) body))  ; recursively uniquify Let exp and body
-              ))]
-
-        [else                           ; if key does not exist in env, map this symbol to it's own Var struct
-          (let ([new-env (dict-set env x (Var x))])                                     ; add this symbol's Var struct to env to show that it should reference itself
-            (Let x ((uniquify-exp new-env) e) ((uniquify-exp new-env) body))            ; recursively uniquify let exp and body
-          )]
-        )
-      ]
-
-      [(Prim op es)                     ; if the expression is an operator and operands, uniquify all operands
-       (Prim op (for/list ([e es]) ((uniquify-exp env) e)))])))
 
 ;; uniquify : R1 -> R1
 (define (uniquify p)
+
+  (define (uniquify-exp e env)
+      (match e
+        [(Var x) (dict-ref env x)]        ; if the expression is a Var struct, find the referenced value of the Var-struct's symbol in the environment
+        [(Int n) (Int n)]                 ; if the expression is an Int struct object, just return the same
+        [(Bool n) (Bool n)]                 ; if the expression is a Bool struct object, just return the same
+        [(Let x e body)
+          (cond                           ; check if the symbol being defined by Let already has another reference in the environment
+            [(dict-has-key? env x)          ; if key already exists in env, make a new symbol for this key and save in environment
+                (let ([new-sym (gensym x)])                                                 ; generate new symbol for x
+                  (let ([new-env (dict-set env x (Var new-sym))])                           ; make a new environment mapping x to Var struct of new-sym
+                    (Let new-sym (uniquify-exp e env) (uniquify-exp body new-env))  ; recursively uniquify Let exp and body. Exp needs the old env, body needs the new-env
+                  ))]
+            [else                           ; if key does not exist in env, map this symbol to it's own Var struct
+              (let ([new-env (dict-set env x (Var x))])                                     ; add this symbol's Var struct to env to show that it should reference itself
+                (Let x (uniquify-exp e env) (uniquify-exp body new-env))            ; recursively uniquify let exp and body
+              )]
+          )
+        ]
+        [(If cnd e1 e2) (If (uniquify-exp cnd env) (uniquify-exp e1 env) (uniquify-exp e2 env))]
+        [(Prim op es)                     ; if the expression is an operator and operands, uniquify all operands
+          (Prim op (for/list ([opd es]) (uniquify-exp opd env)))])
+  )
+
   (match p
-    [(Program info e) (Program info ((uniquify-exp '()) e))]))
+    [(Program info e) (Program info (uniquify-exp e '()))])
+)
 
 ; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
@@ -662,14 +681,15 @@
 (define compiler-passes
   `( 
      ;; Uncomment the following passes as you finish them.
-     ("uniquify", uniquify, interp-Lvar, type-check-Lvar)
-     ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
-     ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
-     ("instruction selection", select-instructions, interp-pseudo-x86-0)
-     ("uncover live", uncover-live, interp-pseudo-x86-0)
-     ("build interference", build-interference, interp-pseudo-x86-0)
-     ("allocate registers", allocate-registers, interp-pseudo-x86-0)
-     ("assign homes", assign-homes, interp-x86-0)
-     ("patch instructions", patch-instructions, interp-x86-0)
-     ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ("shrink", shrink, interp-Lif, type-check-Lif)
+     ("uniquify", uniquify, interp-Lif, type-check-Lif)
+    ;  ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
+    ;  ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
+    ;  ("instruction selection", select-instructions, interp-pseudo-x86-0)
+    ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
+    ;  ("build interference", build-interference, interp-pseudo-x86-0)
+    ;  ("allocate registers", allocate-registers, interp-pseudo-x86-0)
+    ;  ("assign homes", assign-homes, interp-x86-0)
+    ;  ("patch instructions", patch-instructions, interp-x86-0)
+    ;  ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
      ))
