@@ -73,13 +73,22 @@
     )
 
   (define (rco_atom exp-to-atom)
+    (printf "Got rco_atom: ~v\n" exp-to-atom)
     (match exp-to-atom
-      [(Int a) (values (Int a) '())]    ; If the expressions are simple already
-      [(Var a) (values (Var a) '())]    ; return them as it is with an empty environment
+      [(Int a) (values (Int a) '())]      ; If the expressions are simple already
+      [(Var a) (values (Var a) '())]      ; return them as it is
+      [(Bool a) (values (Bool a) '())]    ; with an empty environment
 
       [(Let x e body)       ; to convert the let into an atomic: (1) assign a tmp to the simplified expression e, (2) make the body an atomic and assign to a variable body-var (3) return the body-var and environment with body-var
         (let-values ([(tmp-body body-env) (rco_atom body)]) (values tmp-body (cons ( cons x (rco_exp e)) body-env)))    ; extract the body's symbol and env with let-values and return the body's symbol along with the env with the newly let'ed variable 
       ]
+
+      [(If cnd e1 e2)
+        (let* (
+                [prim-atm (gensym "clingclang")]
+                [new-env (list (cons prim-atm (If (rco_exp cnd) (rco_exp e1) (rco_exp e2))))]
+              )
+              (values prim-atm new-env))]
 
       [(Prim op es) (let* ( [prim-atm (gensym "clingclang")]
                             [es-rets (for/fold ([ret-vals '()]) ([each-e es]) (let-values([(op-sym op-env) (rco_atom each-e)]) (append ret-vals (list (list op-sym op-env)))))] ; if it is a primitive, first get the atomic exps of all operands
@@ -120,7 +129,10 @@
     (match exp-to-exp
       [(Int a) (Int a)]
       [(Var a) (Var a)]
+      [(Bool a) (Bool a)]
+
       [(Let x e body) (Let x (rco_exp e) (rco_exp body))]
+      [(If cnd e1 e2) (If (rco_exp cnd) (rco_exp e1) (rco_exp e2))]
       [(Prim op es) (let* ( [es-rets (for/fold ([ret-vals '()]) ([each-e es]) (let-values([(op-sym op-env) (rco_atom each-e)]) (append ret-vals (list (list op-sym op-env)))))]
                             [full-env                                                                         ; combine the environments of the atomicized operands
                                 (for/fold ([full-env '()]) ([each-ret es-rets]) (append full-env (cadr each-ret)))]
@@ -682,8 +694,8 @@
   `( 
      ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lif, type-check-Lif)
-     ("uniquify", uniquify, interp-Lif, type-check-Lif)
-    ;  ("remove complex opera*", remove-complex-opera*, interp-Lvar, type-check-Lvar)
+    ("uniquify", uniquify, interp-Lif, type-check-Lif)
+    ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
     ;  ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
     ;  ("instruction selection", select-instructions, interp-pseudo-x86-0)
     ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
