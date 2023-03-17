@@ -8,9 +8,11 @@
 (require "interp-Lvar.rkt")
 (require "interp-Cvar.rkt")
 (require "interp-Lif.rkt")
+(require "interp-Cif.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "type-check-Lif.rkt")
+(require "type-check-Cif.rkt")
 (require "utilities.rkt")
 (provide (all-defined-out))
 
@@ -73,7 +75,7 @@
     )
 
   (define (rco_atom exp-to-atom)
-    (printf "Got rco_atom: ~v\n" exp-to-atom)
+    ; (printf "Got rco_atom: ~v\n" exp-to-atom)
     (match exp-to-atom
       [(Int a) (values (Int a) '())]      ; If the expressions are simple already
       [(Var a) (values (Var a) '())]      ; return them as it is
@@ -152,12 +154,43 @@
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
 
+  (define basic-blocks '())
+
+  (define (create_block tail)       ; tail is already a Seq/Return in Cif
+    (match tail
+      [(Goto label) (Goto label)]
+      [else
+        (let  ([label (gensym 'block)])
+              (set! basic-blocks (cons (cons label tail) basic-blocks))
+              (Goto label))]
+    )
+  )
+
+  (define (explicate_pred cnd thn els)
+    (printf "explicate_pred cnd:~v thn:~v els:~v\n---\n" cnd thn els)
+    (match cnd
+      [(Var x) (IfStmt (Var x) (create_block thn) (create_block els))]
+      [(Let x rhs body) (create_block (Seq (Assign (Var x) rhs) (IfStmt body (create_block thn) (create_block els))))]
+      ; [(Prim 'not (list e)) ___] TODO
+      [(Prim op es) ;#:when (or (eq? op 'eq?) (eq? op '<))
+        (IfStmt (Prim op es) (create_block thn) (create_block els))]
+      [(Bool b) (if b thn els)]
+      [(If cnd^ thn^ els^) (IfStmt cnd^ (create_block (explicate_pred thn^ thn els)) (create_block (explicate_pred els^ thn els)))]
+      [else (error "explicate_pred unhandled case" cnd)]
+    )
+  )
+
   (define (explicate_tail e)
     (match e
       [(Var x) (Return (Var x))]
       [(Int n) (Return (Int n))]
+      [(Bool b) (Return (Bool b))]
       [(Return r) (Return r)]
       [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
+      [(If cnd e1 e2) (let* ( [then_branch (explicate_tail e1)]
+                              [else_branch (explicate_tail e2)])
+                            (explicate_pred cnd then_branch else_branch))
+      ]
       [(Prim op es) (Return (Prim op es))]
       [_ e]
     )
@@ -167,13 +200,21 @@
     (match e
       [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
       [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
+      [(Bool b) (Seq (Assign (Var x) (Bool b)) cont)]
       [(Prim op es) (Seq (Assign (Var x) e) cont)]
       [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
+      [(If cnd e1 e2)
+                    (let* ( [goto_cont_block (create_block cont)]
+                            [then_branch (Seq (Assign (Var x) e1) goto_cont_block)]     ; TODO e1, e2 transformation
+                            [else_branch (Seq (Assign (Var x) e2) goto_cont_block)])
+                          (explicate_pred cnd then_branch else_branch))
+      ]
+
     )
   )
 
   (match p
-    [(Program info body) (CProgram info `((start . ,(explicate_tail body))))])
+    [(Program info body) (CProgram info (list (cons 'start (explicate_tail body))))])
 )
 
 ;; select-instructions : C0 -> pseudo-x86
@@ -696,7 +737,7 @@
     ("shrink", shrink, interp-Lif, type-check-Lif)
     ("uniquify", uniquify, interp-Lif, type-check-Lif)
     ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
-    ;  ("explicate control", explicate-control, interp-Cvar, type-check-Cvar)
+    ("explicate control", explicate-control, interp-Cif, type-check-Cif)
     ;  ("instruction selection", select-instructions, interp-pseudo-x86-0)
     ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
     ;  ("build interference", build-interference, interp-pseudo-x86-0)
