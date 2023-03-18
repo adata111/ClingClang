@@ -162,20 +162,22 @@
       [else
         (let  ([label (gensym 'block)])
               (set! basic-blocks (cons (cons label tail) basic-blocks))
+              ; (printf "Created ~v for ~v\n---\n" label tail)
               (Goto label))]
     )
   )
 
   (define (explicate_pred cnd thn els)
-    (printf "explicate_pred cnd:~v thn:~v els:~v\n---\n" cnd thn els)
+    ; (printf "explicate_pred cnd:~v\nthn:~v\nels:~v\n---\n" cnd thn els)
     (match cnd
-      [(Var x) (IfStmt (Var x) (create_block thn) (create_block els))]
-      [(Let x rhs body) (create_block (Seq (Assign (Var x) rhs) (IfStmt body (create_block thn) (create_block els))))]
-      ; [(Prim 'not (list e)) ___] TODO
+      [(Var x) (IfStmt (Prim 'eq? (list (Var x) (Bool #t))) (create_block thn) (create_block els))]
+      [(Let x rhs body) (explicate_assign x rhs (explicate_pred body thn els))]
+      [(Prim 'not (list e)) (explicate_pred e els thn)]
       [(Prim op es) ;#:when (or (eq? op 'eq?) (eq? op '<))
         (IfStmt (Prim op es) (create_block thn) (create_block els))]
       [(Bool b) (if b thn els)]
-      [(If cnd^ thn^ els^) (IfStmt cnd^ (create_block (explicate_pred thn^ thn els)) (create_block (explicate_pred els^ thn els)))]
+      ; [(If cnd^ thn^ els^) (IfStmt cnd^ (create_block (explicate_pred thn^ thn els)) (create_block (explicate_pred els^ thn els)))]
+      [(If cnd^ thn^ els^) (explicate_pred cnd^ (create_block (explicate_pred thn^ thn els)) (create_block (explicate_pred els^ thn els)))]
       [else (error "explicate_pred unhandled case" cnd)]
     )
   )
@@ -205,16 +207,23 @@
       [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
       [(If cnd e1 e2)
                     (let* ( [goto_cont_block (create_block cont)]
-                            [then_branch (Seq (Assign (Var x) e1) goto_cont_block)]     ; TODO e1, e2 transformation
-                            [else_branch (Seq (Assign (Var x) e2) goto_cont_block)])
+                            ; [then_branch (Seq (Assign (Var x) e1) goto_cont_block)]     ; TODO e1, e2 transformation
+                            ; [else_branch (Seq (Assign (Var x) e2) goto_cont_block)])
+                            [then_branch (explicate_assign x e1 goto_cont_block)]
+                            [else_branch (explicate_assign x e2 goto_cont_block)])
                           (explicate_pred cnd then_branch else_branch))
       ]
-
     )
   )
 
   (match p
-    [(Program info body) (CProgram info (list (cons 'start (explicate_tail body))))])
+    [(Program info body) (CProgram info
+    (let* ( [start-body (explicate_tail body)]
+            [full-app-body (cons (cons 'start start-body) basic-blocks)])
+          (begin
+            (printf "Start body: ~v\n" start-body)
+            full-app-body))
+    )])
 )
 
 ;; select-instructions : C0 -> pseudo-x86
