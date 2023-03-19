@@ -169,32 +169,18 @@
 
   (define (explicate_pred cnd thn els)
     ; (printf "explicate_pred cnd:~v\nthn:~v\nels:~v\n---\n" cnd thn els)
-    (match cnd
-      [(Var x) (IfStmt (Prim 'eq? (list (Var x) (Bool #t))) (create_block thn) (create_block els))]
-      [(Let x rhs body) (explicate_assign x rhs (explicate_pred body thn els))]
-      [(Prim 'not (list e)) (explicate_pred e els thn)]
-      [(Prim op es) ;#:when (or (eq? op 'eq?) (eq? op '<))
-        (IfStmt (Prim op es) (create_block thn) (create_block els))]
-      [(Bool b) (if b thn els)]
-      ; [(If cnd^ thn^ els^) (IfStmt cnd^ (create_block (explicate_pred thn^ thn els)) (create_block (explicate_pred els^ thn els)))]
-      [(If cnd^ thn^ els^) (explicate_pred cnd^ (create_block (explicate_pred thn^ thn els)) (create_block (explicate_pred els^ thn els)))]
-      [else (error "explicate_pred unhandled case" cnd)]
-    )
-  )
-
-  (define (explicate_tail e)
-    (match e
-      [(Var x) (Return (Var x))]
-      [(Int n) (Return (Int n))]
-      [(Bool b) (Return (Bool b))]
-      [(Return r) (Return r)]
-      [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
-      [(If cnd e1 e2) (let* ( [then_branch (explicate_tail e1)]
-                              [else_branch (explicate_tail e2)])
-                            (explicate_pred cnd then_branch else_branch))
-      ]
-      [(Prim op es) (Return (Prim op es))]
-      [_ e]
+    (let ([thn-block (create_block thn)]
+          [els-block (create_block els)])
+          (match cnd
+            [(Var x) (IfStmt (Prim 'eq? (list (Var x) (Bool #t))) thn-block els-block)]
+            [(Let x rhs body) (explicate_assign x rhs (explicate_pred body thn-block els-block))]
+            [(Prim 'not (list e)) (explicate_pred e els-block thn-block)]
+            [(Prim op es) ;#:when (or (eq? op 'eq?) (eq? op '<))
+              (IfStmt (Prim op es) thn-block els-block)]
+            [(Bool b) (if b thn-block els-block)]
+            [(If cnd^ thn^ els^) (explicate_pred cnd^ (explicate_pred thn^ thn-block els-block) (explicate_pred els^ thn-block els-block))]
+            [else (error "explicate_pred unhandled case" cnd)]
+          )
     )
   )
 
@@ -213,6 +199,22 @@
                             [else_branch (explicate_assign x e2 goto_cont_block)])
                           (explicate_pred cnd then_branch else_branch))
       ]
+    )
+  )
+
+  (define (explicate_tail e)
+    (match e
+      [(Var x) (Return (Var x))]
+      [(Int n) (Return (Int n))]
+      [(Bool b) (Return (Bool b))]
+      [(Return r) (Return r)]
+      [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
+      [(If cnd e1 e2) (let* ( [then_branch (explicate_tail e1)]
+                              [else_branch (explicate_tail e2)])
+                            (explicate_pred cnd then_branch else_branch))
+      ]
+      [(Prim op es) (Return (Prim op es))]
+      [_ e]
     )
   )
 
