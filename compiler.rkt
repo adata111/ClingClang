@@ -193,8 +193,6 @@
       [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
       [(If cnd e1 e2)
                     (let* ( [goto_cont_block (create_block cont)]
-                            ; [then_branch (Seq (Assign (Var x) e1) goto_cont_block)]     ; TODO e1, e2 transformation
-                            ; [else_branch (Seq (Assign (Var x) e2) goto_cont_block)])
                             [then_branch (explicate_assign x e1 goto_cont_block)]
                             [else_branch (explicate_assign x e2 goto_cont_block)])
                           (explicate_pred cnd then_branch else_branch))
@@ -246,7 +244,7 @@
     )
   )
 
-  (define (expr-to-instr-list x expr)               ; convert the expression into x86 instructions and assign it to x
+  (define (expr-to-instr-list x expr)               ; convert the assign expression into x86 instructions and assign it to x
     (match expr
       [(Prim 'read '())                             ; if it is a read operation, call the read_int function, the result of read_int is stored in rax, assign it to x
         (list
@@ -273,10 +271,10 @@
         )
       ]
       ; TODO x = (not x)
-      ; [(Prim 'not (list (Var x)) (list
-      ;     (Instr 'xorq (list (Imm 1) (Var x)))
-      ;   )
-      ; ]
+      [(Prim 'not (list (Var x))) (list
+          (Instr 'xorq (list (Imm 1) (Var x)))
+        )
+      ]
       ; x = (not a)
       [(Prim 'not (list a)) (list
           (Instr 'movq (list a (Var x)))
@@ -284,7 +282,7 @@
         )
       ]
       [(Prim 'eq? (list arg1 arg2)) (list
-          (Instr 'cmpq (list arg2 arg1))
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
           (Instr 'sete (Reg 'al))
           (Instr 'movzbq (list (Reg 'al) (Var x)))
         )
@@ -306,20 +304,65 @@
           (Instr Jmp label)
         )
       ]
-      [(IfStmt (Prim 'eq? (list arg1 arg2)) (Goto if-goto-label) (Goto else-goto-label)) (begin
-          (printf "if eq? ~v ~v then goto ~v else goto ~v" arg1 arg2 if-goto-label else-goto-label)
+    )
+  )
+
+  (define (ifstmt-to-instr-list stmt)
+    (match stmt
+      [(IfStmt (Prim 'eq? (list arg1 arg2)) (Goto then-label) (Goto else-label))
+        (append
+          (list 
+            (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+            (JmpIf 'e then-label)
+            (Jmp else-label)
+          )
         )
       ]
-
+      [(IfStmt (Prim '< (list arg1 arg2)) (Goto then-label) (Goto else-label))
+        (append
+          (list 
+            (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+            (JmpIf 'l then-label)
+            (Jmp else-label)
+          )
+        )
+      ]
+      [(IfStmt (Prim '<= (list arg1 arg2)) (Goto then-label) (Goto else-label))
+        (append
+          (list 
+            (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+            (JmpIf 'le then-label)
+            (Jmp else-label)
+          )
+        )
+      ]
+      [(IfStmt (Prim '> (list arg1 arg2)) (Goto then-label) (Goto else-label))
+        (append
+          (list 
+            (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+            (JmpIf 'g then-label)
+            (Jmp else-label)
+          )
+        )
+      ]
+      [(IfStmt (Prim '>= (list arg1 arg2)) (Goto then-label) (Goto else-label))
+        (append
+          (list 
+            (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+            (JmpIf 'ge then-label)
+            (Jmp else-label)
+          )
+        )
+      ]
     )
   )
 
-  (define (make-instr stmt)
+  (define (make-instr-seq stmt)
     (match stmt
-      [(Assign (Var x) e) (expr-to-instr-list x e)]           ; every line is just an assignment, convert the expression to x86 code and assign it to x
+      [(Assign (Var x) e) (expr-to-instr-list x e)]             ; the line is just an assignment, convert the expression to x86 code and assign it to x
+      [(IfStmt cnd thn els) (ifstmt-to-instr-list stmt)] ; convert the if statement into x86 code
     )
   )
-
 
   (define (make-ret-instr ret-expr)       ; convert the expression to x86, store the return value in %rax, and jump to the conclusion label since the entire block has now ended with this return statement
     (match ret-expr
@@ -376,14 +419,19 @@
     )
   )
 
-  (define (unpack-seq block)
-    (printf "--------\n unpack seq \n ~v++++++++++\n" block)
+  (define (unpack-seq block)                                          ; block is always either just a return statement, a Seq with an assign and a tail, or an IfStmt that has GoTo's to other blocks
+    (printf "--------\nEntered unpack seq \n ~v\n++++++++++\n" block)
     (match block
-      [(Return e)                                                     ; if the entire block is just a single return, make a return x86 instruction for that expression
+      [(Return e)                                                     ; if the entire (remaining) block is just a single return, make a return x86 instruction for that expression
             (make-ret-instr e)
       ]
       [(Seq first-line tailz)                                         ; if the remaining block is (Seq line (Seq line .....)), convert the line and recursively call unpack-seq on the tail of the block 
-        (append (make-instr first-line) (unpack-seq tailz))           ; both make-instr and unpack-seq return a list of the x86 instructions
+        (append (make-instr-seq first-line) (unpack-seq tailz))       ; both make-instr-seq and unpack-seq return a list of the x86 instructions
+      ]
+      [(IfStmt cnd thn els)
+          (begin
+          ; (printf "Matched IfStmt in unpack-seq if ~v then goto ~v else goto ~v\n-----\n" cnd thn els)
+          (make-instr-seq block))
       ]
     )
   )
@@ -799,7 +847,7 @@
     ("uniquify", uniquify, interp-Lif, type-check-Lif)
     ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
     ("explicate control", explicate-control, interp-Cif, type-check-Cif)
-    ; ("instruction selection", select-instructions, interp-pseudo-x86-0)
+    ("instruction selection", select-instructions, interp-pseudo-x86-0)
     ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
     ;  ("build interference", build-interference, interp-pseudo-x86-0)
     ;  ("allocate registers", allocate-registers, interp-pseudo-x86-0)
