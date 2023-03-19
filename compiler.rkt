@@ -283,11 +283,34 @@
       ]
       [(Prim 'eq? (list arg1 arg2)) (list
           (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
-          (Instr 'sete (Reg 'al))
+          (Instr 'set (list 'e (Reg 'al)))
           (Instr 'movzbq (list (Reg 'al) (Var x)))
         )
       ]
-      
+      [(Prim '< (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'l (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Var x)))
+        )
+      ]
+      [(Prim '<= (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'le (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Var x)))
+        )
+      ]
+      [(Prim '> (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'g (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Var x)))
+        )
+      ]
+      [(Prim '>= (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'ge (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Var x)))
+        )
+      ]
       [(Int n) (list 
           (Instr 'movq (list (Imm n) (Var x)))
         )
@@ -300,10 +323,7 @@
           (Instr 'movq (list (Imm (boolean->integer b)) (Var x)))
         )
       ]
-      [(Goto label)(list 
-          (Instr Jmp label)
-        )
-      ]
+      [(Goto label) (list (Jmp label))]
     )
   )
 
@@ -420,7 +440,7 @@
   )
 
   (define (unpack-seq block)                                          ; block is always either just a return statement, a Seq with an assign and a tail, or an IfStmt that has GoTo's to other blocks
-    (printf "--------\nEntered unpack seq \n ~v\n++++++++++\n" block)
+    ; (printf "--------\nEntered unpack seq \n ~v\n++++++++++\n" block)
     (match block
       [(Return e)                                                     ; if the entire (remaining) block is just a single return, make a return x86 instruction for that expression
             (make-ret-instr e)
@@ -432,6 +452,9 @@
           (begin
           ; (printf "Matched IfStmt in unpack-seq if ~v then goto ~v else goto ~v\n-----\n" cnd thn els)
           (make-instr-seq block))
+      ]
+      [(Goto label)                                                     ; if the entire (remaining) block is just a single Goto, make a jump x86 instruction for that label
+            (list (Jmp label))
       ]
     )
   )
@@ -847,7 +870,7 @@
     ("uniquify", uniquify, interp-Lif, type-check-Lif)
     ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
     ("explicate control", explicate-control, interp-Cif, type-check-Cif)
-    ("instruction selection", select-instructions, interp-pseudo-x86-0)
+    ("instruction selection", select-instructions, interp-pseudo-x86-1)
     ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
     ;  ("build interference", build-interference, interp-pseudo-x86-0)
     ;  ("allocate registers", allocate-registers, interp-pseudo-x86-0)
