@@ -14,6 +14,7 @@
 (require "type-check-Lif.rkt")
 (require "type-check-Cif.rkt")
 (require "utilities.rkt")
+(require "multigraph.rkt")
 (provide (all-defined-out))
 
 (define (shrink p)            ; converts 'and and 'or to `If` statements, recursively calls itself on every other operation
@@ -184,7 +185,7 @@
     )
   )
 
-  (define (explicate_assign x e cont)
+  (define (explicate_assign x e cont)                             ; TODO testcase check: (let ([x (not #f)]) (if x 42 0))
     (match e
       [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
       [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
@@ -221,7 +222,7 @@
     (let* ( [start-body (explicate_tail body)]
             [full-app-body (cons (cons 'start start-body) basic-blocks)])
           (begin
-            (printf "Start body: ~v\n" start-body)
+            ; (printf "Start body: ~v\n" start-body)
             full-app-body))
     )])
 )
@@ -276,8 +277,8 @@
         )
       ]
       ; x = (not a)
-      [(Prim 'not (list a)) (list
-          (Instr 'movq (list a (Var x)))
+      [(Prim 'not (list arg1)) (list
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Var x)))
           (Instr 'xorq (list (Imm 1) (Var x)))
         )
       ]
@@ -445,8 +446,11 @@
       [(Return e)                                                     ; if the entire (remaining) block is just a single return, make a return x86 instruction for that expression
             (make-ret-instr e)
       ]
-      [(Seq first-line tailz)                                         ; if the remaining block is (Seq line (Seq line .....)), convert the line and recursively call unpack-seq on the tail of the block 
-        (append (make-instr-seq first-line) (unpack-seq tailz))       ; both make-instr-seq and unpack-seq return a list of the x86 instructions
+      [(Seq first-line tailz)    
+          (begin
+          ; (printf "Matched seq in unpack-seq first line ~v \ntails ~v\n-----\n" first-line tailz)                                     ; if the remaining block is (Seq line (Seq line .....)), convert the line and recursively call unpack-seq on the tail of the block 
+          (append (make-instr-seq first-line) (unpack-seq tailz))       ; both make-instr-seq and unpack-seq return a list of the x86 instructions
+          )
       ]
       [(IfStmt cnd thn els)
           (begin
@@ -537,8 +541,32 @@
     )
   )
 
+  (define (get-connected-blocks block)                                                ; finds all the other blocks that this block connects to
+    (match block
+      [(Block info block-body)
+                (for/fold   ([outgoing-block-conns '()])
+                            ([each-ins block-body])
+                            (match each-ins                                           ; for each instruction in this block, any JmpIf
+                              [(JmpIf cc label) (cons label outgoing-block-conns)]    ; of Jmp instruction denotes that this block connects to some other block
+                              [(Jmp label) (cons label outgoing-block-conns)]
+                              [_ outgoing-block-conns]))
+      ])
+  )
+
+  (define (make-cfg blocks)                         ; makes the control flow graph of all the blocks in the program
+    (let ([edge-list
+            (for/fold ([edge-list '()])             ; start with an initial empty edge list between all blocks in the program
+              ([(label block) (in-dict blocks)])    ; go through each (label, block) in the body
+              (append edge-list (for/list ([each-connected-block (get-connected-blocks block)]) (list label each-connected-block)))   ; get the outgoing edges from every block, add the tuple of (label,outgoing_block) to the edge list
+            )])
+    (printf "Edge-list: ~v\n----\n" edge-list)
+    (printf "Multigraph: ~v\n---\n" (make-multigraph edge-list))
+    )
+    blocks
+  )
+
   (match p
-    [(X86Program info body) (X86Program info (uncover-live-blocks body))]
+    [(X86Program info body) (X86Program info (make-cfg body))]
   )
 )
 
@@ -871,10 +899,35 @@
     ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
     ("explicate control", explicate-control, interp-Cif, type-check-Cif)
     ("instruction selection", select-instructions, interp-pseudo-x86-1)
-    ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
-    ;  ("build interference", build-interference, interp-pseudo-x86-0)
-    ;  ("allocate registers", allocate-registers, interp-pseudo-x86-0)
+     ("uncover live", uncover-live, interp-pseudo-x86-1)
+    ;  ("build interference", build-interference, interp-pseudo-x86-1)
+    ;  ("allocate registers", allocate-registers, interp-pseudo-x86-1)
     ;  ("assign homes", assign-homes, interp-x86-0)
     ;  ("patch instructions", patch-instructions, interp-x86-0)
     ;  ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
      ))
+
+
+
+; (define file "tests/cond_test_12.rkt")
+; (define ast (read-program file))
+
+; (debug-level 1)
+; (AST-output-syntax 'concrete-syntax)
+
+; (define (opt passes ast)
+;   (pretty-print ast)
+;   (match passes
+;     ['() ast]
+;     [(list (list name fun interp type-check) more ...)
+;      (println (string-append "Applying " name))
+;      (opt more (type-check (fun ast)))]
+;     [(list (list name fun interp) more ...)
+;      (println (string-append "Applying " name))
+;      (opt more (fun ast))]
+;     [(list (list name fun) more ...)
+;      (println (string-append "Applying " name))
+;      (opt more (fun ast))]))
+
+; (define final (opt compiler-passes ast))
+
