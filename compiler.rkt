@@ -229,10 +229,18 @@
 ;; select-instructions : C0 -> pseudo-x86
 (define (select-instructions p)
 
+  (define (boolean->integer b)
+    (case b
+      ((#f) 0)
+      ((#t) 1)
+    )
+  )
+
   (define (atm-to-pseudo-x86 atm)
     (match atm
       [(Int n) (Imm n)]
       [(Var x) (Var x)]
+      [(Bool b) (Imm (boolean->integer b))]
     )
   )
 
@@ -262,12 +270,42 @@
           (Instr 'negq (list (Var x))) 
         )
       ]
+      ; TODO x = (not x)
+      ; [(Prim 'not (list (Var x)) (list
+      ;     (Instr 'xorq (list (Imm 1) (Var x)))
+      ;   )
+      ; ]
+      ; x = (not a)
+      [(Prim 'not (list a)) (list
+          (Instr 'movq (list a (Var x)))
+          (Instr 'xorq (list (Imm 1) (Var x)))
+        )
+      ]
+      [(Prim 'eq? (list arg1 arg2)) (list
+          (Instr 'cmpq (list arg2 arg1))
+          (Instr 'sete (Reg 'al))
+          (Instr 'movzbq (list (Reg 'al) (Var x)))
+        )
+      ]
+      
       [(Int n) (list 
           (Instr 'movq (list (Imm n) (Var x)))
         )
       ]
       [(Var a) (list 
           (Instr 'movq (list (Var a) (Var x))) 
+        )
+      ]
+      [(Bool b) (list 
+          (Instr 'movq (list (Imm (boolean->integer b)) (Var x)))
+        )
+      ]
+      [(Goto label)(list 
+          (Instr Jmp label)
+        )
+      ]
+      [(IfStmt (Prim 'eq? (list arg1 arg2)) (Goto if-goto-label) (Goto else-goto-label)) (begin
+          (printf "if eq? ~v ~v then goto ~v else goto ~v" arg1 arg2 if-goto-label else-goto-label)
         )
       ]
 
@@ -310,6 +348,12 @@
           (Jmp 'conclusion)
         )
       ]
+      [(Prim 'not (Var x)) (list
+          (Instr 'movq (list (Var x) (Reg 'rax))) 
+          (Instr 'xorq (list (Imm 1) (Reg 'rax)))
+          (Jmp 'conclusion)
+        )
+      ]
       [(Int n) 
         (list 
           (Instr 'movq (list (Imm n) (Reg 'rax))) 
@@ -322,10 +366,16 @@
           (Jmp 'conclusion)
         )
       ]
+      [(Bool b) (list 
+          (Instr 'movq (list (Imm (boolean->integer b)) (Reg 'rax)))
+          (Jmp 'conclusion)
+        )
+      ]
     )
   )
 
   (define (unpack-seq block)
+    (printf "--------\n unpack seq \n ~v++++++++++\n" block)
     (match block
       [(Return e)                                                     ; if the entire block is just a single return, make a return x86 instruction for that expression
             (make-ret-instr e)
@@ -747,7 +797,7 @@
     ("uniquify", uniquify, interp-Lif, type-check-Lif)
     ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
     ("explicate control", explicate-control, interp-Cif, type-check-Cif)
-    ;  ("instruction selection", select-instructions, interp-pseudo-x86-0)
+    ; ("instruction selection", select-instructions, interp-pseudo-x86-0)
     ;  ("uncover live", uncover-live, interp-pseudo-x86-0)
     ;  ("build interference", build-interference, interp-pseudo-x86-0)
     ;  ("allocate registers", allocate-registers, interp-pseudo-x86-0)
