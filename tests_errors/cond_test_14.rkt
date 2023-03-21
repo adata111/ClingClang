@@ -1,0 +1,1 @@
+(let ([x (read)]) (if (eq? x 10) (let ([y (+ 3 5)]) (- x y)) (let ([y (- 5)]) (+ x y))))

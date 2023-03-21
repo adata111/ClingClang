@@ -483,8 +483,6 @@
     (or (Var? inp-arg) (Reg? inp-arg))
   )
 
-
-  ; TODO add the x86 functions' read and write
   (define (get-read-vars instr)
     (match instr
       [(Instr 'movq (list s d)) (if (is-var-reg? s) (set s) (set))]
@@ -574,13 +572,13 @@
                                       (dict-set instr-blocks-dict label (uncover-live-block-make-info-cfg tsorted-cfg label (dict-ref blocks label)))   ; update the info of every block
             )]
           )
-    (printf "Edge-list: ~v\n----\n" edge-list)
-    (printf "Multigraph: ~v\n---\n" (get-vertices cfg))
-    (printf "Multigraph: ~v\n---\n" (for/list ([vertex (in-vertices cfg)]) (get-neighbors cfg vertex)))
-    (printf "Transposed Multigraph: ~v\n---\n" (get-vertices transposed-cfg))
-    (printf "Transposed Multigraph: ~v\n---\n" (for/list ([vertex (in-vertices transposed-cfg)]) (get-neighbors transposed-cfg vertex)))
-    (printf "Tsorted transposed multigraph: ~v\n----\n" tsorted-cfg)
-    (printf "Label->live: ~v\n----\n" label->live)
+    ; (printf "Edge-list: ~v\n----\n" edge-list)
+    ; (printf "Multigraph: ~v\n---\n" (get-vertices cfg))
+    ; (printf "Multigraph: ~v\n---\n" (for/list ([vertex (in-vertices cfg)]) (get-neighbors cfg vertex)))
+    ; (printf "Transposed Multigraph: ~v\n---\n" (get-vertices transposed-cfg))
+    ; (printf "Transposed Multigraph: ~v\n---\n" (for/list ([vertex (in-vertices transposed-cfg)]) (get-neighbors transposed-cfg vertex)))
+    ; (printf "Tsorted transposed multigraph: ~v\n----\n" tsorted-cfg)
+    ; (printf "Label->live: ~v\n----\n" label->live)
     uncovered-blocks
     )
   )
@@ -592,14 +590,19 @@
 
 (define (build-interference p)
 
+  (define (is-var-reg? inp-arg)
+    (or (Var? inp-arg) (Reg? inp-arg))
+  )
+
   (define (get-write-vars instr)
-    (define (is-var-reg? inp-arg)
-      (or (Var? inp-arg) (Reg? inp-arg))
-    )
     (match instr
       [(Instr instr (list s d)) (set d)]
       [(Instr 'negq (list s)) (if (is-var-reg? s) (set s) (set))]
       [(Jmp 'conclusion) (set)]
+      [(Instr 'cmpq (list a b)) (set)]
+      [(Instr 'set (list cc d)) (if (is-var-reg? d) (set d) (set))]
+      [(Instr 'movzbq (list s d)) (if (is-var-reg? d) (set d) (set))]
+      [(Instr 'xorq (list imm sd)) (if (is-var-reg? sd) (set sd) (set))]
       [(Callq call-label arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [_ (set)]
     )
@@ -741,7 +744,7 @@
                                     (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
                                     (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
                                     (cons 6 (Reg 'r10)))]
-            [(self-colors) (list  (cons (Reg 'r15) -5) (cons (Reg 'r11) -4)
+            [(self-colors) (list  (cons (Reg 'al) -6) (cons (Reg 'r15) -5) (cons (Reg 'r11) -4)
                                     (cons (Reg 'rbp) -3) (cons (Reg 'rsp) -2) (cons (Reg 'rax) -1)
                                     (cons (Reg 'rcx) 0) (cons (Reg 'rdx) 1) (cons (Reg 'rsi) 2)
                                     (cons (Reg 'rdi) 3) (cons (Reg 'r8) 4) (cons (Reg 'r9) 5)
@@ -817,7 +820,7 @@
   (match p
     [(X86Program info body) 
         (let*-values (
-          [(register-colors) (list  (cons -5 (Reg 'r15)) (cons -4 (Reg 'r11))
+          [(register-colors) (list (cons -6 (Reg 'al)) (cons -5 (Reg 'r15)) (cons -4 (Reg 'r11))
                                     (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp)) (cons -1 (Reg 'rax))
                                     (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
                                     (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
@@ -848,6 +851,13 @@
           )
         ]
         [(Instr 'movq (list (Reg s) (Reg d))) (if (equal? s d) (list) (list line))]         ; if it is a trivial movq, remove this line
+        [(Instr 'cmpq (list a (Imm b))) (list
+                                          (Instr 'movq (list (Imm b) (Reg 'rax)))
+                                          (Instr 'cmpq (list a (Reg 'rax))))]
+        [(Instr 'movzbq (list s d)) #:when (not (Reg? d))
+                                  (list
+                                    (Instr 'movq (list d (Reg 'rax)))
+                                    (Instr 'movzbq (list s (Reg 'rax))))]
         [_ (list line)]
       )
     )
@@ -919,12 +929,12 @@
     ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
     ("explicate control", explicate-control, interp-Cif, type-check-Cif)
     ("instruction selection", select-instructions, interp-pseudo-x86-1)
-     ("uncover live", uncover-live, interp-pseudo-x86-1)
-    ;  ("build interference", build-interference, interp-pseudo-x86-1)
-    ;  ("allocate registers", allocate-registers, interp-pseudo-x86-1)
-    ;  ("assign homes", assign-homes, interp-x86-0)
-    ;  ("patch instructions", patch-instructions, interp-x86-0)
-    ;  ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ("uncover live", uncover-live, interp-pseudo-x86-1)
+    ("build interference", build-interference, interp-pseudo-x86-1)
+    ("allocate registers", allocate-registers, interp-pseudo-x86-1)
+    ("assign homes", assign-homes, interp-x86-1)
+    ("patch instructions", patch-instructions, interp-x86-1)
+    ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
      ))
 
 
