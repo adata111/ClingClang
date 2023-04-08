@@ -21,6 +21,7 @@
 
 (require "shrink.rkt")
 (require "uniquify.rkt")
+(require "reveal-functions.rkt")
 (require "remove-complex-opera.rkt")
 (require "explicate-control.rkt")
 (require "select-instructions.rkt")
@@ -39,6 +40,7 @@
      ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lfun, type-check-Lfun)
     ("uniquify", uniquify, interp-Lfun, type-check-Lfun)
+    ("reveal-functions", reveal-functions, interp-Lfun, type-check-Lfun)
     ; ("remove complex opera*", remove-complex-opera*, interp-Lfun, type-check-Lfun)
     ; ("explicate control", explicate-control, interp-Cif, type-check-Cif)
     ; ("instruction selection", select-instructions, interp-pseudo-x86-1)
