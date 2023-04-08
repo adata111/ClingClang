@@ -2243,6 +2243,7 @@ Changelog:
        (let* ([test-name (format "~a_~a" test-family test-number)]
               [type-error-expected (file-exists? (format "./tests/~a.tyerr" test-name))]
               [typechecks (compiler (format "./tests/~a.rkt" test-name))])
+         (begin (printf "-----------------~v ~v ~v---------------\n" test-number test-name type-error-expected)
          (test-suite
           test-name
           (if type-error-expected
@@ -2269,7 +2270,7 @@ Changelog:
 					      (check-equal? (caddr result) 255 (format "expected error, not: ~a" (caddr result)))]
 					     [else
 					      (check-not-eq? (cadr result) eof "x86 execution did not produce output")
-					      (check result-check (caddr result) output "Mismatched output from x86 execution")]))))))))))))))
+					      (check result-check (caddr result) output "Mismatched output from x86 execution")])))))))))))))))
 
 (define (compiler-tests name typechecker passes test-family test-nums)
   (run-tests (compiler-tests-suite name typechecker passes test-family test-nums) (test-verbosity)))

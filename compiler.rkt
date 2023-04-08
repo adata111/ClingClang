@@ -4,15 +4,17 @@
 (require graph)
 (require "priority_queue.rkt")
 (require "interp.rkt")
-(require "interp-Lint.rkt")
-(require "interp-Lvar.rkt")
-(require "interp-Cvar.rkt")
-(require "interp-Lif.rkt")
-(require "interp-Cif.rkt")
-(require "type-check-Lvar.rkt")
-(require "type-check-Cvar.rkt")
-(require "type-check-Lif.rkt")
-(require "type-check-Cif.rkt")
+; (require "interp-Lint.rkt")
+; (require "interp-Lvar.rkt")
+; (require "interp-Cvar.rkt")
+; (require "interp-Lif.rkt")
+; (require "interp-Cif.rkt")
+(require "interp-Lfun.rkt")
+; (require "type-check-Lvar.rkt")
+; (require "type-check-Cvar.rkt")
+; (require "type-check-Lif.rkt")
+; (require "type-check-Cif.rkt")
+(require "type-check-Lfun.rkt")
 (require "utilities.rkt")
 (require "multigraph.rkt")
 (provide (all-defined-out))
@@ -21,18 +23,37 @@
 
   (define (shrink-body body)
     (match body
+      [(Var x) (Var x)]
+      [(Int n) (Int n)]
+      [(Bool n) (Bool n)]
+
       [(Let x e letbody) (Let x (shrink-body e) (shrink-body letbody))]
       [(If cnd e1 e2) (If (shrink-body cnd) (shrink-body e1) (shrink-body e2))]
       [(Prim 'and (list e1 e2)) (If e1 e2 (Bool #f))]
       [(Prim 'or (list e1 e2)) (If e1 (Bool #t) e2)]
       [(Prim op args)
         (Prim op (for/list ([e args]) (shrink-body e)))]
-      [_ body]
+
+      [(Apply fun-exp arg-exps) (Apply  (shrink-body fun-exp)
+                                        (for/list ([each-exp arg-exps])
+                                                  (shrink-body each-exp)))]
+      ; [_ body]
     )
   )
 
   (match p
-    [(Program info body) (Program info (shrink-body body))])
+    ; [(Program info body) (Program info (shrink-body body))]
+
+    [(ProgramDefsExp info defs main-exp)
+      (let*  ([mainDef (Def 'main '() 'Integer '() main-exp)]
+              [all-defs (append defs (list mainDef))]
+              [new-defs (for/list ([each-def all-defs])
+                                  (match each-def [ (Def fun-name param-list ret-type fun-info fun-body)
+                                                    (Def fun-name param-list ret-type fun-info (shrink-body fun-body))]))])
+            (ProgramDefs info new-defs))
+    ]
+    
+    )
 )
 
 
@@ -924,17 +945,17 @@
 (define compiler-passes
   `( 
      ;; Uncomment the following passes as you finish them.
-    ("shrink", shrink, interp-Lif, type-check-Lif)
-    ("uniquify", uniquify, interp-Lif, type-check-Lif)
-    ("remove complex opera*", remove-complex-opera*, interp-Lif, type-check-Lif)
-    ("explicate control", explicate-control, interp-Cif, type-check-Cif)
-    ("instruction selection", select-instructions, interp-pseudo-x86-1)
-    ("uncover live", uncover-live, interp-pseudo-x86-1)
-    ("build interference", build-interference, interp-pseudo-x86-1)
-    ("allocate registers", allocate-registers, interp-pseudo-x86-1)
-    ("assign homes", assign-homes, interp-x86-1)
-    ("patch instructions", patch-instructions, interp-x86-1)
-    ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
+    ("shrink", shrink, interp-Lfun, type-check-Lfun)
+    ; ("uniquify", uniquify, interp-Lfun, type-check-Lfun)
+    ; ("remove complex opera*", remove-complex-opera*, interp-Lfun, type-check-Lfun)
+    ; ("explicate control", explicate-control, interp-Cif, type-check-Cif)
+    ; ("instruction selection", select-instructions, interp-pseudo-x86-1)
+    ; ("uncover live", uncover-live, interp-pseudo-x86-1)
+    ; ("build interference", build-interference, interp-pseudo-x86-1)
+    ; ("allocate registers", allocate-registers, interp-pseudo-x86-1)
+    ; ("assign homes", assign-homes, interp-x86-1)
+    ; ("patch instructions", patch-instructions, interp-x86-1)
+    ; ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
      ))
 
 

@@ -2,14 +2,18 @@
 #lang racket
 
 (require "utilities.rkt")
-(require "interp-Lvar.rkt")
-(require "interp-Cvar.rkt")
-(require "interp-Lif.rkt")
-(require "type-check-Lif.rkt")
+; (require "interp-Lvar.rkt")
+; (require "interp-Cvar.rkt")
+; (require "interp-Lif.rkt")
+; (require "type-check-Lif.rkt")
+(require "interp-Lfun.rkt")
+(require "type-check-Lfun.rkt")
+
 (require "interp.rkt")
 (require "compiler.rkt")
-;; (debug-level 1)
-;; (AST-output-syntax 'concrete-syntax)
+
+(debug-level 1)
+(AST-output-syntax 'concrete-syntax)
 
 ;; all the files in the tests/ directory with extension ".rkt".
 (define all-tests
@@ -26,11 +30,12 @@
           (string=? r (car (string-split p "_"))))
         all-tests)))
 
-(debug-level 1)
+; (debug-level 1)
 ; (interp-tests "var" #f compiler-passes interp-Lvar "var_test" (tests-for "var"))
 ; (interp-tests "cond" type-check-Lif compiler-passes interp-Lif "cond_test" (tests-for "cond"))
+(interp-tests "fun" type-check-Lfun compiler-passes interp-Lfun "fun_test" (tests-for "fun"))
 
 ;; Uncomment the following when all the passes are complete to
 ;; test the final x86 code.
-(compiler-tests "cond" #f compiler-passes "cond_test" (tests-for "cond"))
+; (compiler-tests "cond" #f compiler-passes "cond_test" (tests-for "cond"))
 
