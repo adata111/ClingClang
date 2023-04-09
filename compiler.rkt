@@ -10,6 +10,7 @@
 ; (require "interp-Lif.rkt")
 ; (require "interp-Cif.rkt")
 (require "interp-Lfun.rkt")
+(require "interp-Lfun-prime.rkt")
 ; (require "type-check-Lvar.rkt")
 ; (require "type-check-Cvar.rkt")
 ; (require "type-check-Lif.rkt")
@@ -40,8 +41,8 @@
      ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lfun, type-check-Lfun)
     ("uniquify", uniquify, interp-Lfun, type-check-Lfun)
-    ("reveal-functions", reveal-functions, interp-Lfun, type-check-Lfun)
-    ; ("remove complex opera*", remove-complex-opera*, interp-Lfun, type-check-Lfun)
+    ("reveal-functions", reveal-functions, interp-Lfun-prime, type-check-Lfun)
+    ("remove complex opera*", remove-complex-opera*, interp-Lfun-prime, type-check-Lfun)
     ; ("explicate control", explicate-control, interp-Cif, type-check-Cif)
     ; ("instruction selection", select-instructions, interp-pseudo-x86-1)
     ; ("uncover live", uncover-live, interp-pseudo-x86-1)
