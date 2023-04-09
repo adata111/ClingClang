@@ -39,6 +39,14 @@
               (IfStmt (Prim op es) thn-block els-block)]
             [(Bool b) (if b thn-block els-block)]
             [(If cnd^ thn^ els^) (explicate_pred cnd^ (explicate_pred thn^ thn-block els-block) (explicate_pred els^ thn-block els-block))]
+
+            [(Apply fun-name args) (let ([fun-result (gensym "temp")])
+                                          (Seq
+                                            (Assign (Var fun-result) (Call fun-name args))
+                                            (IfStmt (Prim 'eq? (list (Var fun-result) (Bool #t)))
+                                              thn-block els-block)
+                                            ))]
+
             [else (error "explicate_pred unhandled case" cnd)]
           )
     )
@@ -49,6 +57,7 @@
       [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
       [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
       [(Bool b) (Seq (Assign (Var x) (Bool b)) cont)]
+      [(FunRef fun-name arity) (Seq (Assign (Var x) (FunRef fun-name arity)) cont)]
       [(Prim op es) (Seq (Assign (Var x) e) cont)]
       [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
       [(If cnd e1 e2)
@@ -57,6 +66,7 @@
                             [else_branch (explicate_assign x e2 goto_cont_block)])
                           (explicate_pred cnd then_branch else_branch))
       ]
+      [(Apply fun-name args) (Seq (Assign (Var x) (Call fun-name args)) cont)]
     )
   )
 
@@ -65,6 +75,7 @@
       [(Var x) (Return (Var x))]
       [(Int n) (Return (Int n))]
       [(Bool b) (Return (Bool b))]
+      [(FunRef fun-name arity) (Return (FunRef fun-name arity))]
       [(Return r) (Return r)]
       [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
       [(If cnd e1 e2) (let* ( [then_branch (explicate_tail e1)]
@@ -72,16 +83,23 @@
                             (explicate_pred cnd then_branch else_branch))
       ]
       [(Prim op es) (Return (Prim op es))]
+      [(Apply fun-name args) (TailCall fun-name args)]
       [_ e]
     )
   )
 
+  (define (explicate-control-def d)
+    (match d
+      [(Def fun-name param-list ret-type fun-info fun-body)
+        (begin
+          (set! basic-blocks '())
+          (let ([fun-body-tail (explicate_tail fun-body)]) (begin
+                                                              (set! basic-blocks (cons (cons (symbol-append fun-name 'start) fun-body-tail) basic-blocks))
+                                                              (Def fun-name param-list ret-type fun-info basic-blocks)))
+        )])
+  )
+
   (match p
-    [(Program info body) (CProgram info
-    (let* ( [start-body (explicate_tail body)]
-            [full-app-body (cons (cons 'start start-body) basic-blocks)])
-          (begin
-            ; (printf "Start body: ~v\n" start-body)
-            full-app-body))
-    )])
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (explicate-control-def def)))]
+  )
 )
