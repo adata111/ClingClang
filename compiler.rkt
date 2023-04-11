@@ -46,18 +46,18 @@
     ("reveal-functions", reveal-functions, interp-Lfun-prime, type-check-Lfun)
     ("remove complex opera*", remove-complex-opera*, interp-Lfun-prime, type-check-Lfun)
     ("explicate control", explicate-control, interp-Cfun, type-check-Cfun)
-    ; ("instruction selection", select-instructions, interp-pseudo-x86-1)
-    ; ("uncover live", uncover-live, interp-pseudo-x86-1)
-    ; ("build interference", build-interference, interp-pseudo-x86-1)
-    ; ("allocate registers", allocate-registers, interp-pseudo-x86-1)
-    ; ("assign homes", assign-homes, interp-x86-1)
-    ; ("patch instructions", patch-instructions, interp-x86-1)
-    ; ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
+    ("instruction selection", select-instructions, interp-pseudo-x86-3)
+    ; ("uncover live", uncover-live, interp-pseudo-x86-3)
+    ; ("build interference", build-interference, interp-pseudo-x86-3)
+    ; ("allocate registers", allocate-registers, interp-pseudo-x86-3)
+    ; ("assign homes", assign-homes, interp-x86-3)
+    ; ("patch instructions", patch-instructions, interp-x86-3)
+    ; ("prelude and conclusion", prelude-and-conclusion, interp-x86-3)
      ))
 
 
 
-; (define file "tests/cond_test_12.rkt")
+; (define file "tests/fun_test_7.rkt")
 ; (define ast (read-program file))
 
 ; (debug-level 1)

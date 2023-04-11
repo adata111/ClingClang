@@ -3,6 +3,6 @@
 (define (sub-1 [x : Integer]) : Integer
     (- x 1))
 (define (summation [x : Integer]) : Integer
-    (add x (summation (sub-1 x)))
+    (if (>= x 0) (add x (summation (sub-1 x))) 0)
 )
 (summation 5)

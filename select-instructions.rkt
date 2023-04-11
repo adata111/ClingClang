@@ -14,6 +14,8 @@
 ;; select-instructions : C0 -> pseudo-x86
 (define (select-instructions p)
 
+  (define arg-regs (list (Reg 'rdi) (Reg 'rsi) (Reg 'rdx) (Reg 'rcx) (Reg 'r8) (Reg 'r9)))
+
   (define (boolean->integer b)
     (case b
       ((#f) 0)
@@ -96,12 +98,22 @@
           (Instr 'movzbq (list (Reg 'al) (Var x)))
         )
       ]
+      [(Call fun-name args)
+        (let ([fun-arg-ins (for/list ([arg args] [reg arg-regs]) (Instr 'movq (list (atm-to-pseudo-x86 arg) reg)))])
+          (append fun-arg-ins (list ; (TailJmp fun-name (length args))
+                                    (IndirectCallq fun-name (length args))
+                                    (Instr 'movq (list (Reg 'rax) (Var x))))))
+      ]
       [(Int n) (list 
           (Instr 'movq (list (Imm n) (Var x)))
         )
       ]
       [(Var a) (list 
           (Instr 'movq (list (Var a) (Var x))) 
+        )
+      ]
+      [(FunRef a n) (list 
+          (Instr 'leaq (list (Global a) (Var x))) 
         )
       ]
       [(Bool b) (list 
@@ -169,71 +181,118 @@
     )
   )
 
-  (define (make-ret-instr ret-expr)       ; convert the expression to x86, store the return value in %rax, and jump to the conclusion label since the entire block has now ended with this return statement
+  (define (make-ret-instr ret-expr conclusion-label)       ; convert the expression to x86, store the return value in %rax, and jump to the conclusion label since the entire block has now ended with this return statement
     (match ret-expr
       [(Prim 'read '()) 
         (list
           (Callq 'read_int 0)
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
         )
       ]
       [(Prim '+ (list arg1 arg2)) 
         (list 
           (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
           (Instr 'addq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
         )
       ]
       [(Prim '- (list arg1 arg2)) 
         (list 
           (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax))) 
           (Instr 'subq (list (atm-to-pseudo-x86 arg2) (Reg 'rax)))
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
         )
       ]
       [(Prim '- (list arg1)) 
         (list 
           (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
           (Instr 'negq (list (Reg 'rax))) 
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
         )
       ]
-      [(Prim 'not (Var x)) (list
-          (Instr 'movq (list (Var x) (Reg 'rax))) 
+      ; TODO x = (not x)
+      [(Prim 'not (list (Var x))) (list
           (Instr 'xorq (list (Imm 1) (Reg 'rax)))
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
+        )
+      ]
+      ; x = (not a)
+      [(Prim 'not (list arg1)) (list
+          (Instr 'movq (list (atm-to-pseudo-x86 arg1) (Reg 'rax)))
+          (Instr 'xorq (list (Imm 1) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim 'eq? (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'e (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim '< (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'l (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim '<= (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'le (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim '> (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'g (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim '>= (list arg1 arg2)) (list
+          (Instr 'cmpq (list (atm-to-pseudo-x86 arg2) (atm-to-pseudo-x86 arg1)))
+          (Instr 'set (list 'ge (Reg 'al)))
+          (Instr 'movzbq (list (Reg 'al) (Reg 'rax)))
+          (Jmp conclusion-label)
         )
       ]
       [(Int n) 
         (list 
           (Instr 'movq (list (Imm n) (Reg 'rax))) 
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
         )
       ]
       [(Var x) 
         (list 
           (Instr 'movq (list (Var x) (Reg 'rax))) 
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
+        )
+      ]
+      [(FunRef a n) (list 
+          (Instr 'leaq (list (Global a) (Reg 'rax))) 
+          (Jmp conclusion-label)
         )
       ]
       [(Bool b) (list 
           (Instr 'movq (list (Imm (boolean->integer b)) (Reg 'rax)))
-          (Jmp 'conclusion)
+          (Jmp conclusion-label)
         )
       ]
     )
   )
 
-  (define (unpack-seq block)                                          ; block is always either just a return statement, a Seq with an assign and a tail, or an IfStmt that has GoTo's to other blocks
+  (define (unpack-seq fun-name block)                                          ; block is always either just a return statement, a Seq with an assign and a tail, or an IfStmt that has GoTo's to other blocks
     ; (printf "--------\nEntered unpack seq \n ~v\n++++++++++\n" block)
     (match block
       [(Return e)                                                     ; if the entire (remaining) block is just a single return, make a return x86 instruction for that expression
-            (make-ret-instr e)
+            (make-ret-instr e (symbol-append fun-name 'conclusion))
       ]
       [(Seq first-line tailz)    
           (begin
           ; (printf "Matched seq in unpack-seq first line ~v \ntails ~v\n-----\n" first-line tailz)                                     ; if the remaining block is (Seq line (Seq line .....)), convert the line and recursively call unpack-seq on the tail of the block 
-          (append (make-instr-seq first-line) (unpack-seq tailz))       ; both make-instr-seq and unpack-seq return a list of the x86 instructions
+          (append (make-instr-seq first-line) (unpack-seq fun-name tailz))       ; both make-instr-seq and unpack-seq return a list of the x86 instructions
           )
       ]
       [(IfStmt cnd thn els)
@@ -244,18 +303,33 @@
       [(Goto label)                                                     ; if the entire (remaining) block is just a single Goto, make a jump x86 instruction for that label
             (list (Jmp label))
       ]
+      [(TailCall fun-name args)      
+        (let ([fun-arg-ins (for/list ([arg args] [reg arg-regs]) (Instr 'movq (list (atm-to-pseudo-x86 arg) reg)))])
+          (append fun-arg-ins (list (TailJmp fun-name (length args)))))
+      ]
     )
   )
 
-  (define (make-pseudo-x86 blocks)
-    (for/fold ([instr-blocks-dict '()])
-              ([(label block) (in-dict blocks)])    ; go through each (label, block) in the body and converts the blocks from Cvar to pseudo-x86
-              (dict-set instr-blocks-dict label (Block '() (unpack-seq block)))
+  (define (select-instructions-def def)
+    (match def
+    [(Def fun-name (list `[,params : ,param-types] ...) ret-type fun-info fun-body)
+      (let* ( [pseudo-x86-blocks (for/fold  ([instr-blocks-dict '()])
+                                            ([(label block) (in-dict fun-body)])
+                                            (dict-set instr-blocks-dict label (Block '() (unpack-seq fun-name block))))
+              ]
+              [load-function-arguments (for/list  ([arg params] [reg arg-regs])
+                                                  (Instr 'movq (list reg (Var arg))))]
+              [start-block (match (dict-ref pseudo-x86-blocks (symbol-append fun-name 'start))
+                                  [(Block info body) (Block info (append load-function-arguments body))])]
+              [final-pseudo-x86-blocks (dict-set pseudo-x86-blocks (symbol-append fun-name 'start) start-block)]
+              [pseudo-fun-info-params (dict-set fun-info 'num-params (length params))]
+              [pseudo-fun-info-params-types (dict-set pseudo-fun-info-params 'locals-types (append (dict-ref fun-info 'locals-types) (map cons params param-types)))]
+              )
+            (Def fun-name '() ret-type pseudo-fun-info-params-types final-pseudo-x86-blocks))]
     )
   )
 
   (match p
-    [(CProgram info body) (X86Program info (make-pseudo-x86 body))]
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (select-instructions-def def)))]
   )
 )
-
