@@ -26,7 +26,9 @@
       [(Instr 'set (list cc d)) (if (is-var-reg? d) (set d) (set))]
       [(Instr 'movzbq (list s d)) (if (is-var-reg? d) (set d) (set))]
       [(Instr 'xorq (list imm sd)) (if (is-var-reg? sd) (set sd) (set))]
-      [(Callq call-label arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
+      [(Callq call-label arity)       (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
+      [(IndirectCallq fun-name arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
+      [(TailJmp call-label arity)     (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [_ (set)]
     )
   ) ; Duplicated from uncover-live

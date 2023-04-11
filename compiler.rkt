@@ -47,7 +47,7 @@
     ("remove complex opera*", remove-complex-opera*, interp-Lfun-prime, type-check-Lfun)
     ("explicate control", explicate-control, interp-Cfun, type-check-Cfun)
     ("instruction selection", select-instructions, interp-pseudo-x86-3)
-    ; ("uncover live", uncover-live, interp-pseudo-x86-3)
+    ("uncover live", uncover-live, interp-pseudo-x86-3)
     ; ("build interference", build-interference, interp-pseudo-x86-3)
     ; ("allocate registers", allocate-registers, interp-pseudo-x86-3)
     ; ("assign homes", assign-homes, interp-x86-3)
