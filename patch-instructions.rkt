@@ -18,15 +18,14 @@
 
     (define (patch-line line)
       (match line
-        [(Instr operator (list (Deref 'rbp offset1) (Deref 'rbp offset2)))                  ; if the instruction operates on two stack locations, add %rax as an intermediate
-                          (list
-                            (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
-                            (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
-        [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))       ; if one of the immediate values is > 2^16, use rax as an intermediate (edge case mentioned in EoC)
-          (list (Instr 'movq (list (Imm n) (Reg 'rax)))
-                (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
-          )
-        ]
+        [(Instr 'leaq (list arg (Deref 'rbp offset)))
+                              (list
+                                (Instr 'movq (list (Deref 'rbp offset) (Reg 'rax)))
+                                (Instr 'leaq (list arg (Reg 'rax))))]
+        [(TailJmp fun-name arity)
+                      (list
+                        (Instr 'movq (list fun-name (Reg 'rax)))
+                        (TailJmp (Reg 'rax) arity))]
         [(Instr 'movq (list (Reg s) (Reg d))) (if (equal? s d) (list) (list line))]         ; if it is a trivial movq, remove this line
         [(Instr 'cmpq (list a (Imm b))) (list
                                           (Instr 'movq (list (Imm b) (Reg 'rax)))
@@ -35,6 +34,14 @@
                                   (list
                                     (Instr 'movq (list d (Reg 'rax)))
                                     (Instr 'movzbq (list s (Reg 'rax))))]
+        [(Instr operator (list (Deref 'rbp offset1) (Deref 'rbp offset2)))                  ; if the instruction operates on two stack locations, add %rax as an intermediate
+                          (list
+                            (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
+                            (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
+        [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))       ; if one of the immediate values is > 2^16, use rax as an intermediate (edge case mentioned in EoC)
+          (list (Instr 'movq (list (Imm n) (Reg 'rax)))
+                (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
+          )]
         [_ (list line)]
       )
     )
@@ -51,7 +58,16 @@
     )
   )
 
-  (match p
-    [(X86Program info body) (X86Program info (make-x86 body info))]
+  (define (patch-instructions-def def)
+    (match def
+      [(Def fun-name param-list ret-type fun-info fun-body)
+              (Def fun-name param-list ret-type fun-info (make-x86 fun-body fun-info))]
+    )
   )
+
+  (match p
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (patch-instructions-def def)))]
+  )
+
+
 )

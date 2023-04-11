@@ -113,7 +113,16 @@
           ) info-callee)
   )
 
-  (match p
-    [(X86Program info body) (X86Program (allocate-registers-blocks info (dict-ref info 'conflicts)) body)]
+  (define (allocate-registers-blocks-def def)
+    (match def
+      [(Def fun-name param-list ret-type fun-info fun-body)
+        (let ([new-info (allocate-registers-blocks fun-info (dict-ref fun-info 'conflicts))])
+              (Def fun-name param-list ret-type new-info fun-body))]
+    )
   )
+
+  (match p
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (allocate-registers-blocks-def def)))]
+  )
+
 )

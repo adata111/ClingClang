@@ -40,15 +40,23 @@
   (define (replace-var-with-loc block loc-dict)   ; replace variables in a block with their locations
 
     (define (replace-each-arg arg)                ; if an individual symbol is a variable, find its location
-      (match arg
-        [(Var x) (dict-ref loc-dict arg)]
-        [_ arg]
+      (if (dict-has-key? loc-dict arg)            ; if it exists in the variable-location dictionary
+            (match arg
+              [(Var x) (dict-ref loc-dict arg)]
+              [_ arg]
+            )
+            arg
       )
     )
 
     (define (replace-exp exp)                     ; for an expression, replace each argument with its stack location if it is a variable
       (match exp
         [(Instr name arg-list) (Instr name (for/list ([each-arg arg-list]) (replace-each-arg each-arg)))]
+
+        [(Callq fun-name n) (Callq (replace-each-arg fun-name) n)]
+        [(IndirectCallq fun-name n) (IndirectCallq (replace-each-arg fun-name) n)]
+        [(TailJmp fun-name n) (TailJmp (replace-each-arg fun-name) n)]
+
         [_ exp]
       )
     )
@@ -64,19 +72,25 @@
     )
   )
 
-  (match p
-    [(X86Program info body) 
+  (define (assign-homes-def def)
+    (match def
+      [(Def fun-name param-list ret-type fun-info fun-body)
         (let*-values (
-          [(register-colors) (list (cons -6 (Reg 'al)) (cons -5 (Reg 'r15)) (cons -4 (Reg 'r11))
-                                    (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp)) (cons -1 (Reg 'rax))
-                                    (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
-                                    (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
-                                    (cons 6 (Reg 'r10)) (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
-                                    (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]                        ; the colors are mapped to these registers
-          [(var-locs total-offset temp) (create-var-location-dict (dict-ref info 'color-map) register-colors (length (dict-ref info 'used-callee)))]  ; make a dict of each variable and their locations
-          [(new-info) (dict-set info 'stack-space (format-offset total-offset (length (dict-ref info 'used-callee))))]        ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
-        )
-        (X86Program new-info (make-x86-var var-locs body))   ; replace the variables in the body with the locations
-      )]
+                      [(register-colors) (list (cons -6 (Reg 'al)) (cons -5 (Reg 'r15)) (cons -4 (Reg 'r11))
+                                                (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp)) (cons -1 (Reg 'rax))
+                                                (cons 0 (Reg 'rcx)) (cons 1 (Reg 'rdx)) (cons 2 (Reg 'rsi))
+                                                (cons 3 (Reg 'rdi)) (cons 4 (Reg 'r8)) (cons 5 (Reg 'r9))
+                                                (cons 6 (Reg 'r10)) (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
+                                                (cons 9 (Reg 'r13)) (cons 10 (Reg 'r14)))]                        ; the colors are mapped to these registers
+                      [(var-locs total-offset temp) (create-var-location-dict (dict-ref fun-info 'color-map) register-colors (length (dict-ref fun-info 'used-callee)))]  ; make a dict of each variable and their locations
+                      [(new-info) (dict-set fun-info 'stack-space (format-offset total-offset (length (dict-ref fun-info 'used-callee))))]        ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
+                      [(new-body) (make-x86-var var-locs fun-body)]
+                    )
+              (Def fun-name param-list ret-type fun-info new-body))]
+    )
+  )
+
+  (match p
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (assign-homes-def def)))]
   )
 )

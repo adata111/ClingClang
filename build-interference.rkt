@@ -77,7 +77,21 @@
     )
   )
 
-  (match p
-    [(X86Program info body) (X86Program (build-interference-blocks info body) body)]
+  (define (build-interference-def def)
+    (match def
+      [(Def fun-name param-list ret-type fun-info fun-body)
+        (let* ([new-fun-info (dict-set fun-info 'conflicts
+                                                      (for/fold ([interference-graph (undirected-graph '())])
+                                                                ([(label block) (in-dict fun-body)])    ; go through each (label, block) in the body
+                                                                (build-interference-block block interference-graph)   ; build the interference graph of the entire program by going through each block
+                                                      )
+                        )])
+              (Def fun-name param-list ret-type new-fun-info fun-body))]
+    )
   )
+
+  (match p
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (build-interference-def def)))]
+  )
+
 )

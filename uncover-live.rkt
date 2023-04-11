@@ -30,12 +30,13 @@
       [(Instr 'cmpq (list a b)) (if (is-var-reg? a) (if (is-var-reg? b) (set a b) (set a)) (if (is-var-reg? b) (set b) (set)))]
       [(Instr 'set (list cc d)) (set)]
       [(Instr 'movzbq (list s d)) (if (is-var-reg? s) (set s) (set))]
+      [(Instr 'leaq (list s d)) (if (is-var-reg? s) (set s) (set))]
       [(Instr 'xorq (list imm sd)) (if (is-var-reg? sd) (set sd) (set))]
       [(Jmp label) (dict-ref label->live label)]
       [(JmpIf cc label) (dict-ref label->live label)]
-      [(Callq fun-name n)         (list->set (take arg-regs n))]
-      [(IndirectCallq fun-name n) (list->set (take arg-regs n))]
-      [(TailJmp fun-name n)       (list->set (take arg-regs n))]
+      [(Callq (Var x) n)         (list->set (append (list (Var x)) (take arg-regs n)))]
+      [(IndirectCallq (Var x) n) (list->set (append (list (Var x)) (take arg-regs n)))]
+      [(TailJmp (Var x) n)       (list->set (append (list (Var x)) (take arg-regs n)))]
       [_ (set)]
     )
   )
@@ -48,6 +49,7 @@
       [(Instr 'cmpq (list a b)) (set)]
       [(Instr 'set (list cc d)) (if (is-var-reg? d) (set d) (set))]
       [(Instr 'movzbq (list s d)) (if (is-var-reg? d) (set d) (set))]
+      [(Instr 'leaq (list s d)) (if (is-var-reg? d) (set d) (set))]
       [(Instr 'xorq (list imm sd)) (if (is-var-reg? sd) (set sd) (set))]
       [(Callq call-label arity)       (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [(IndirectCallq fun-name arity) (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
@@ -97,7 +99,7 @@
     (match block
       [(Block info block-body)  (let ([live-vars-list (uncover-live-block-make-list block-body)])
                                       (begin
-                                        (printf "uncover-live-block-make-info-cfg: ~v\n" label)
+                                        ; (printf "uncover-live-block-make-info-cfg: ~v\n" label)
                                         (set! label->live (dict-set label->live label (car live-vars-list)))
                                         (Block (dict-set '() 'all-live-after live-vars-list) block-body)))]
     )  
