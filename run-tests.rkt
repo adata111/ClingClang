@@ -37,5 +37,5 @@
 
 ;; Uncomment the following when all the passes are complete to
 ;; test the final x86 code.
-; (compiler-tests "cond" #f compiler-passes "cond_test" (tests-for "cond"))
+(compiler-tests "fun" #f compiler-passes "fun_test" (tests-for "fun"))
 

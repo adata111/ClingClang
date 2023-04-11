@@ -4,4 +4,4 @@
     (- add y))
 (define (myfun [a : Integer] [b : Integer] [c : Boolean]) : Integer
     (if c (add a b) (sub a b)))
-(myfun 4 3 #t)
+(myfun 4 38 #t) 

@@ -3,7 +3,7 @@
 # Goes through each rkt file, and generates the result of the racket expression
 # Considers the cases where the rkt files needs input from a .in file
 
-for f in ./cond_*.rkt
+for f in ./fun_*.rkt
 do
     f="${f%.rkt}"
     echo "$f"

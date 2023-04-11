@@ -52,7 +52,7 @@
     ("allocate registers", allocate-registers, interp-pseudo-x86-3)
     ("assign homes", assign-homes, interp-x86-3)
     ("patch instructions", patch-instructions, interp-x86-3)
-    ; ("prelude and conclusion", prelude-and-conclusion, interp-x86-3)
+    ("prelude and conclusion", prelude-and-conclusion, #f)
      ))
 
 

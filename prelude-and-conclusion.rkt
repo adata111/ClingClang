@@ -41,7 +41,8 @@
                                         pop-used-callees
                                         (list (Instr 'popq (list (Reg 'rbp))) (Retq))))
     )
-    (define (expand-tail-jmp target)
+
+    (define (expand-tail-jmp target)                ; expand the tail jump instruction to pop current frame
       (append
         (list (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))))
         pop-used-callees
@@ -59,22 +60,10 @@
     )
 
     (define process-body 
-      (for/fold ([new-body-dict '()])                               ; for each (label, block), patch each block
+      (for/fold ([new-body-dict '()])                               ; for each (label, block), process each block
               ([(label block) (in-dict body-dict)]) 
-              (dict-set new-body-dict label (patch-block block))
+              (dict-set new-body-dict label (process-block block))
       )
-      ; (for/fold ([new-body '()]) ([(k v) (in-dict body-dict)])
-      ;           (dict-set new-body k
-      ;             (match v
-      ;               [(Block info block-lines) 
-      ;                 (Block '() (                    ;
-      ;                     for/fold ([new-block-lines '()]) 
-      ;                               ([line block-lines]) 
-      ;                               (append new-block-lines 
-      ;                                   (match line
-      ;                                     [(TailJmp reg arity) (expand-tail-jmp reg)]
-      ;                                     [_ (list line)]))))]
-      ;             )))
     )
 
     
@@ -84,13 +73,13 @@
   (define (make-prelude-conclusion-def def)
     (match def
       [(Def fun-name param-list ret-type fun-info fun-body)
-        (make-prelude-conclusion fun-body fun-info fun-name)]
+        (Def fun-name '() ret-type fun-info (make-prelude-conclusion fun-body fun-info fun-name))]
     )
   )
 
   (match p
-    [(ProgramDefs info defs) 
-        (X86Program info (for/fold ([new-defs '()]) 
-                                    ([def defs]) (append new-defs (make-prelude-conclusion-def def))))]
+    [(ProgramDefs info defs)
+     (let ([new-defs (for/list ([d defs]) (make-prelude-conclusion-def d))])
+      (X86Program info (append-map Def-body new-defs)))]
   )
 )
