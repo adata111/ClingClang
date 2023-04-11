@@ -86,7 +86,7 @@
                       [(new-info) (dict-set fun-info 'stack-space (format-offset total-offset (length (dict-ref fun-info 'used-callee))))]        ; add the total stack-space that is needed for all the variables as an entry in the info of the X86Program
                       [(new-body) (make-x86-var var-locs fun-body)]
                     )
-              (Def fun-name param-list ret-type fun-info new-body))]
+              (Def fun-name param-list ret-type new-info new-body))]
     )
   )
 
