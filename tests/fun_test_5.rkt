@@ -2,6 +2,6 @@
     (+ x y))
 (define (sub [add : Integer] [y : Integer]) : Integer
     (- add y))
-(define (choose-add-sub [c : Boolean]) : (Integer Integer -> Integer)
+(define (chooseaddsub [c : Boolean]) : (Integer Integer -> Integer)
     (if c add sub))
-((choose-add-sub #t) 5 37)
+((chooseaddsub #t) 5 37)

@@ -4,6 +4,6 @@
     (- add y))
 (define (myfun [a : Integer] [b : Integer] [c : Boolean]) : Integer
     (if c (add a b) (sub a b)))
-(define (ret-bool [a : Integer]) : Boolean
+(define (retbool [a : Integer]) : Boolean
     (> a 5))
-(myfun 4 38 (ret-bool 6))
+(myfun 4 38 (retbool 6))
