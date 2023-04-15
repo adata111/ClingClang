@@ -33,9 +33,9 @@
 ; (debug-level 1)
 ; (interp-tests "var" #f compiler-passes interp-Lvar "var_test" (tests-for "var"))
 ; (interp-tests "cond" type-check-Lif compiler-passes interp-Lif "cond_test" (tests-for "cond"))
-(interp-tests "fun" type-check-Lfun compiler-passes interp-Lfun "fun_test" (tests-for "fun"))
+(interp-tests "vec" type-check-Lfun compiler-passes interp-Lfun "vec_test" (tests-for "vec"))
 
 ;; Uncomment the following when all the passes are complete to
 ;; test the final x86 code.
-(compiler-tests "fun" #f compiler-passes "fun_test" (tests-for "fun"))
+; (compiler-tests "fun" #f compiler-passes "fun_test" (tests-for "fun"))
 

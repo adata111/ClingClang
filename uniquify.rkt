@@ -19,6 +19,7 @@
         [(Var x) (cond [(dict-has-key? env x) (dict-ref env x)] [else (Var x)])]        ; if the expression is a Var struct, find the referenced value of the Var-struct's symbol in the environment
         [(Int n) (Int n)]                 ; if the expression is an Int struct object, just return the same
         [(Bool n) (Bool n)]                 ; if the expression is a Bool struct object, just return the same
+        [(Void) (Void)]
         [(Let x e body)
           (cond                           ; check if the symbol being defined by Let already has another reference in the environment
             [(dict-has-key? env x)          ; if key already exists in env, make a new symbol for this key and save in environment
@@ -35,6 +36,7 @@
         [(If cnd e1 e2) (If (uniquify-exp cnd env) (uniquify-exp e1 env) (uniquify-exp e2 env))]
         [(Prim op es)                     ; if the expression is an operator and operands, uniquify all operands
           (Prim op (for/list ([opd es]) (uniquify-exp opd env)))]
+        [(HasType e t) (HasType (uniquify-exp e env) t)]
         [(Apply fun-exp arg-exps) (Apply  (uniquify-exp fun-exp env)
                                           (for/list ([each-exp arg-exps])
                                                     (uniquify-exp each-exp env)))]

@@ -18,6 +18,7 @@
       [(Var x) (Var x)]
       [(Int n) (Int n)]
       [(Bool n) (Bool n)]
+      [(Void) (Void)]
 
       [(Let x e letbody) (Let x (shrink-body e) (shrink-body letbody))]
       [(If cnd e1 e2) (If (shrink-body cnd) (shrink-body e1) (shrink-body e2))]
@@ -25,7 +26,7 @@
       [(Prim 'or (list e1 e2)) (If e1 (Bool #t) e2)]
       [(Prim op args)
         (Prim op (for/list ([e args]) (shrink-body e)))]
-
+      [(HasType e t) (HasType (shrink-body e) t)]
       [(Apply fun-exp arg-exps) (Apply  (shrink-body fun-exp)
                                         (for/list ([each-exp arg-exps])
                                                   (shrink-body each-exp)))]
