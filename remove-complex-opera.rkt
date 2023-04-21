@@ -27,6 +27,7 @@
       [(Int a) (values (Int a) '())]      ; If the expressions are simple already
       [(Var a) (values (Var a) '())]      ; return them as it is
       [(Bool a) (values (Bool a) '())]    ; with an empty environment
+      [(Void) (values Void '())]
 
       [(FunRef fun-name arity)            ; FunRef is supposed to be a complex expression, assign the FunRef to a symbol and return the environment
         (let* (
@@ -66,6 +67,27 @@
                           [new-env (append full-env (list (cons prim-atm (Apply (car all-op-atms) (cdr all-op-atms)))))]
                           )
                           (values prim-atm new-env))] 
+      
+      [(Collect req-bytes)    ; control prolly wont ever come here, coz so far collect is just a function call with no return
+        (let* (
+                [coll-atm (gensym "clingclang")]
+                [new-env (list (cons coll-atm (Collect req-bytes)))]
+              )
+              (values coll-atm new-env))]
+
+      [(Allocate len type)    ; control prolly wont ever come here, coz allocate is only called when creating a vector, so it is already inside a let expr
+        (let* (
+                [alloc-atm (gensym "clingclang")]
+                [new-env (list (cons alloc-atm (Allocate len type)))]
+              )
+              (values alloc-atm new-env))]
+
+      [(GlobalValue var)
+        (let* (
+                [globval-atm (gensym "clingclang")]
+                [new-env (list (cons globval-atm (GlobalValue var)))]
+              )
+              (values globval-atm new-env))]
 
     ))
 
@@ -99,6 +121,10 @@
       [(Int a) (Int a)]
       [(Var a) (Var a)]
       [(Bool a) (Bool a)]
+      [(Void) (Void)]
+      [(Collect req-bytes) (Collect req-bytes)]
+      [(Allocate len type) (Allocate len type)]
+      [(GlobalValue var) (GlobalValue var)]     ; TODO check if control comes here ever
       [(FunRef fname arity) (FunRef fname arity)]
 
       [(Let x e body) (Let x (rco_exp e) (rco_exp body))]
