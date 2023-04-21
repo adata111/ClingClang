@@ -33,9 +33,10 @@
       ; [_ body]
     )
   )
-
   (match p
-    ; [(Program info body) (Program info (shrink-body body))]
+    [(Program info body) ;(printf "hi\n")]
+      (let ([mainDef (Def 'main '() 'Integer '() (shrink-body body))])
+            (ProgramDefs info (list mainDef)))]
 
     [(ProgramDefsExp info defs main-exp)
       (let*  ([mainDef (Def 'main '() 'Integer '() main-exp)]

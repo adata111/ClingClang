@@ -1,0 +1,1 @@
+(let ([vec (if (> (read) 5) (vector 1 2 3 4) (vector 5 6 7 8))]) (vector-ref vec 3))

@@ -45,6 +45,6 @@
                                               (match def [(Def fun-name param-list _ _ _)
                                                           (dict-set fun-names fun-name (FunRef fun-name (length param-list)))]))] ; Calculate (FunRef `function_name` arity) for each (Var `function_name`)
               [new-defs (for/list ([def defs]) (reveal-functions-internal def all-fun-names))]) ; Replace each (Var `function_name`) reference with the (FunRef fun-name) instance
-        (begin (printf "all function names ~v" all-fun-names ) (ProgramDefs info new-defs)))])
+           (ProgramDefs info new-defs))])
 )
 
