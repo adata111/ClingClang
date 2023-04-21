@@ -1,0 +1,5 @@
+(let ([vec (vector 1 2 3)]) 
+     (let ([_ (vector-set! vec 2 42)]) 
+          (vector-ref vec 2)
+     )
+)

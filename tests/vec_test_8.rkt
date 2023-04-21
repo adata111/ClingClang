@@ -1,0 +1,1 @@
+(if (vector-ref (vector #t #f #f) 2) 0 42)

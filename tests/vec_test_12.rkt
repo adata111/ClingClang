@@ -1,0 +1,1 @@
+(let ([vec (vector #t #f #f)]) (if (vector-ref vec 2) 0 42))
