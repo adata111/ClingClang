@@ -34,7 +34,13 @@
           (match cnd
             [(Var x) (IfStmt (Prim 'eq? (list (Var x) (Bool #t))) thn-block els-block)]
             [(Let x rhs body) (explicate_assign x rhs (explicate_pred body thn-block els-block))]
-            [(Prim 'not (list e)) (explicate_pred e els-block thn-block)]
+            [(Prim 'not (list e)) (explicate_pred e els-block thn-block)]   ; switch then and else blocks
+            [(Prim 'vector-ref es) (let ([vec-result (gensym "temp")])
+                                          (Seq
+                                            (Assign (Var vec-result) cnd)
+                                            (IfStmt (Prim 'eq? (list (Var vec-result) (Bool #t)))
+                                              thn-block els-block)
+                                            ))]
             [(Prim op es) ;#:when (or (eq? op 'eq?) (eq? op '<))
               (IfStmt (Prim op es) thn-block els-block)]
             [(Bool b) (if b thn-block els-block)]
@@ -57,7 +63,9 @@
       [(Var a) (Seq (Assign (Var x) (Var a)) cont)]
       [(Int n) (Seq (Assign (Var x) (Int n)) cont)]
       [(Bool b) (Seq (Assign (Var x) (Bool b)) cont)]
+      [(Void) (Seq (Assign (Var x) (Void)) cont)]
       [(FunRef fun-name arity) (Seq (Assign (Var x) (FunRef fun-name arity)) cont)]
+      [(Prim op es) (Seq (Assign (Var x) e) cont)]
       [(Prim op es) (Seq (Assign (Var x) e) cont)]
       [(Let y rhs body) (explicate_assign y rhs (explicate_assign x body cont))]
       [(If cnd e1 e2)
@@ -67,6 +75,9 @@
                           (explicate_pred cnd then_branch else_branch))
       ]
       [(Apply fun-name args) (Seq (Assign (Var x) (Call fun-name args)) cont)]
+      [(Allocate len type) (Seq (Assign (Var x) e) cont)]
+      [(GlobalValue var) (Seq (Assign (Var x) e) cont)]
+      [(Collect req-bytes) (Seq (Collect req-bytes) cont)]
     )
   )
 
@@ -75,6 +86,7 @@
       [(Var x) (Return (Var x))]
       [(Int n) (Return (Int n))]
       [(Bool b) (Return (Bool b))]
+      [(Void) (Return (Void))]
       [(FunRef fun-name arity) (Return (FunRef fun-name arity))]
       [(Return r) (Return r)]
       [(Let x rhs body) (explicate_assign x rhs (explicate_tail body))]
@@ -84,6 +96,8 @@
       ]
       [(Prim op es) (Return (Prim op es))]
       [(Apply fun-name args) (TailCall fun-name args)]
+      [(Allocate len type) (Return (Allocate len type))]
+      [(GlobalValue var) (Return (GlobalValue var))]
       [_ e]
     )
   )
