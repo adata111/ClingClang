@@ -28,7 +28,20 @@
       [(Int n) (Imm n)]
       [(Var x) (Var x)]
       [(Bool b) (Imm (boolean->integer b))]
+      [(Void) (Imm 0)]
     )
+  )
+
+  (define (ptr? atm)
+    (match atm
+      [`(Vector ,vec-types ...) 1]
+      [_ 0])
+  )
+
+  (define (calc-vec-metadata vec-len vec-types)
+    (for/fold ([cur-tag (bitwise-ior 1 (arithmetic-shift vec-len 1))])        ; the initial tag has 1 in the forwarding bit, and the vector length is also encoded
+              ([each-type vec-types] [vec-index (range 7 (+ vec-len 7))])     ; go through each type in the vector and the index of the pointer mask
+              (bitwise-ior cur-tag (arithmetic-shift (ptr? each-type) vec-index)))
   )
 
   (define (expr-to-instr-list x expr)               ; convert the assign expression into x86 instructions and assign it to x
@@ -98,11 +111,42 @@
           (Instr 'movzbq (list (Reg 'al) (Var x)))
         )
       ]
+      [(Prim 'vector-set! (list arg1 (Int arg2) arg3)) (list
+          (Instr 'movq (list arg1 (Reg 'r11)))
+          (Instr 'movq (list (atm-to-pseudo-x86 arg3) (Deref 'r11 (* 8 (+ 1 arg2)))))
+          (Instr 'movq (list (Imm 0) (Var x)))
+        )
+      ]
+      [(Prim 'vector-ref (list arg1 (Int arg2))) (list
+          (Instr 'movq (list arg1 (Reg 'r11)))
+          (Instr 'movq (list (Deref 'r11 (* 8 (+ 1 arg2))) (Var x)))
+        )
+      ]
+      [(Prim 'vector-length (list arg1)) (list
+          (Instr 'movq (list arg1 (Reg 'r11)))
+          (Instr 'movq (list (Deref 'r11 0) (Reg 'r11)))
+          (Instr 'sarq (list (Imm 1) (Reg 'r11)))
+          (Instr 'andq (list (Imm 63) (Reg 'r11)))
+          (Instr 'movq (list (Reg 'r11) (Var x)))
+        )
+      ]
       [(Call fun-name args)
         (let ([fun-arg-ins (for/list ([arg args] [reg arg-regs]) (Instr 'movq (list (atm-to-pseudo-x86 arg) reg)))])
           (append fun-arg-ins (list ; (TailJmp fun-name (length args))
                                     (IndirectCallq fun-name (length args))
                                     (Instr 'movq (list (Reg 'rax) (Var x))))))
+      ]
+      [(Allocate vec-len `(Vector ,vec-types ...)) (let ([vec-tag (calc-vec-metadata vec-len vec-types)])
+                                                (list 
+                                                  (Instr 'movq (list (Global 'free_ptr) (Reg 'r11)))
+                                                  (Instr 'addq (list (Imm (* 8 (+ vec-len 1))) (Global 'free_ptr)))
+                                                  (Instr 'movq (list (Imm vec-tag) (Deref 'r11 0)))
+                                                  (Instr 'movq (list (Reg 'r11) (Var x)))
+                                                ))
+      ]
+      [(Void) (list 
+          (Instr 'movq (list (Imm 0) (Var x)))
+        )
       ]
       [(Int n) (list 
           (Instr 'movq (list (Imm n) (Var x)))
@@ -110,6 +154,10 @@
       ]
       [(Var a) (list 
           (Instr 'movq (list (Var a) (Var x))) 
+        )
+      ]
+      [(GlobalValue a) (list 
+          (Instr 'movq (list (Global a) (Var x)))
         )
       ]
       [(FunRef a n) (list 
@@ -177,7 +225,15 @@
   (define (make-instr-seq stmt)
     (match stmt
       [(Assign (Var x) e) (expr-to-instr-list x e)]             ; the line is just an assignment, convert the expression to x86 code and assign it to x
-      [(IfStmt cnd thn els) (ifstmt-to-instr-list stmt)] ; convert the if statement into x86 code
+      [(IfStmt cnd thn els) (ifstmt-to-instr-list stmt)]        ; convert the if statement into x86 code
+      
+      [(Collect n) (list                                        ; Collect operation takes the top of the shadow (root) stack and the number of bytes to allocate as input
+          (Instr 'movq (list (Reg 'r15) (Reg 'rdi)))
+          (Instr 'movq (list (Imm n) (Reg 'rsi)))
+          (Callq 'collect 2)
+        )
+      ]
+
     )
   )
 
@@ -258,6 +314,28 @@
           (Jmp conclusion-label)
         )
       ]
+      [(Prim 'vector-set! (list arg1 (Int arg2) arg3)) (list
+          (Instr 'movq (list arg1 (Reg 'r11)))
+          (Instr 'movq (list (atm-to-pseudo-x86 arg3) (Deref 'r11 (* 8 (+ 1 arg2)))))
+          (Instr 'movq (list (Imm 0) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim 'vector-ref (list arg1 (Int arg2))) (list
+          (Instr 'movq (list arg1 (Reg 'r11)))
+          (Instr 'movq (list (Deref 'r11 (* 8 (+ 1 arg2))) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
+      [(Prim 'vector-length (list arg1)) (list
+          (Instr 'movq (list arg1 (Reg 'r11)))
+          (Instr 'movq (list (Deref 'r11 0) (Reg 'r11)))
+          (Instr 'sarq (list (Imm 1) (Reg 'r11)))
+          (Instr 'andq (list (Imm 63) (Reg 'r11)))
+          (Instr 'movq (list (Reg 'r11) (Reg 'rax)))
+          (Jmp conclusion-label)
+        )
+      ]
       [(Int n) 
         (list 
           (Instr 'movq (list (Imm n) (Reg 'rax))) 
@@ -267,6 +345,12 @@
       [(Var x) 
         (list 
           (Instr 'movq (list (Var x) (Reg 'rax))) 
+          (Jmp conclusion-label)
+        )
+      ]
+      [(GlobalValue x)
+        (list 
+          (Instr 'movq (list (Global x) (Reg 'rax))) 
           (Jmp conclusion-label)
         )
       ]
