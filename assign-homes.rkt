@@ -19,13 +19,15 @@
               ([(var var-color) (in-dict color-map)]) 
               (if (dict-has-key? register-colors var-color)                               ; if this is a color that corresponds to a register location
                   (values (dict-set var-loc-dict var (dict-ref register-colors var-color)) offset color-to-stack) ; use the register. Otherwise it is a stack location
-                  (if (dict-has-key? color-to-stack var-color)                            ; check if this particular stack location has already been allocated in the offset
-                      (values (dict-set var-loc-dict var (Deref 'rbp (dict-ref color-to-stack var-color))) offset color-to-stack) ; if it has already been allocated, use the same stack location by checking in color-to-stack
-                      (let ([new-offset (- offset 8)])                                    ; otherwise, allocate space for this stack location to the offset
-                          (values (dict-set var-loc-dict var (Deref 'rbp new-offset))
-                                  new-offset
-                                  (dict-set color-to-stack var-color new-offset))))       ; save to color-to-stack that this stack location has been allocated space
-                  )))
+                  (if (<= var-color -7)
+                      (values (dict-set var-loc-dict var (Deref 'r15 (* 8 (+ 7 var-color)))) offset color-to-stack) ; (7 + var-color) is negative of the number of this variable on the rootstack
+                      (if (dict-has-key? color-to-stack var-color)                            ; check if this particular stack location has already been allocated in the offset
+                        (values (dict-set var-loc-dict var (Deref 'rbp (dict-ref color-to-stack var-color))) offset color-to-stack) ; if it has already been allocated, use the same stack location by checking in color-to-stack
+                        (let ([new-offset (- offset 8)])                                    ; otherwise, allocate space for this stack location to the offset
+                            (values (dict-set var-loc-dict var (Deref 'rbp new-offset))
+                                    new-offset
+                                    (dict-set color-to-stack var-color new-offset))))       ; save to color-to-stack that this stack location has been allocated space
+                  ))))
 
   (define (format-offset total-offset num-callee)                ; calculate the total stack space that should be allocated, aligned to 16 bytes. total-offset is negative
     (let 
@@ -93,4 +95,5 @@
   (match p
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (assign-homes-def def)))]
   )
+
 )

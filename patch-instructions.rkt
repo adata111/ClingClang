@@ -38,6 +38,10 @@
                           (list
                             (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
                             (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
+        [(Instr operator (list (Deref 'r15 offset1) (Deref 'r15 offset2)))                  ; if the instruction operates on two root stack locations, add %rax as an intermediate
+                          (list
+                            (Instr 'movq (list (Deref 'r15 offset1) (Reg 'rax)))
+                            (Instr operator (list (Reg 'rax) (Deref 'r15 offset2))))]
         [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))       ; if one of the immediate values is > 2^16, use rax as an intermediate (edge case mentioned in EoC)
           (list (Instr 'movq (list (Imm n) (Reg 'rax)))
                 (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))

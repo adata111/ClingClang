@@ -13,10 +13,27 @@
 
 (define (allocate-registers p)
 
+    (define rootstack-color -7)         ; global variable that will store the lowest rootstack variable index (starting from -7 and goes down)
+
+    (define (loc-ptr? loc locals-types)
+    (match loc
+      [(Var x) (match (dict-ref locals-types x)
+                      [`(Vector ,types ...) #t]
+                      [_ #f]
+      )]
+      [_ #f]
+    )
+  ) ; duplicated from build-interference.rkt
+
   (define (get-lowest-available-color used-colors)          ; finds the lowest available color after getting the colors of all neighboring colored nodes
     (for/first ([i (in-naturals)]                           ; start searching from color 0
                   #:when (not (set-member? used-colors i))) ; stop the for/first loop when a natural number is found that is not a used color
                   i))                                       ; return this color
+
+  (define (get-lowest-available-color-tuple used-colors)    ; finds the available color for the root stack 
+    (for/first ([i (in-naturals 5)]                           ; start searching from color -5 (r15's color) and goes "down"
+                  #:when (not (set-member? used-colors (- i)))) ; stop the for/first loop when a negative number is found that is not a used color
+                  (- i)))                                       ; return this color
 
   (define (propagate-color-to-neighbors vertex new-color neighbors old-adjacent-colors)   ; when a vertex is colored, update the adjacent-colors of all its neighbours
     (for/fold ([adjacent-colors old-adjacent-colors])
@@ -64,21 +81,36 @@
                                         (set-count (dict-ref adjacent-map vertex)) colors)) ; calculate the number of colored neighbors to use as the value for the priority queue
   )
 
-  (define (color-graph self-colors old-graph adjacent-colors priority-q handle-map )
+  (define (color-graph self-colors old-graph adjacent-colors priority-q handle-map locals-types)
     (if (equal? 0 (pqueue-count priority-q)) self-colors                              ; if there are no vertices left in the priority-q, return the color-map as it is
     (let*-values (
             [(num-neighbors vertex-handle) (pqueue-pop-node! priority-q)]                     ; get the handle of most saturated vertex from the priority queue
-            [(cur-vertex) (dict-ref handle-map vertex-handle)]                                ; use the handle of the priority queue to find the actual vertex in the handle-map
-            [(new-color) (get-lowest-available-color (dict-ref adjacent-colors cur-vertex))]  ; assign the lowest possible color to this variable
-            [(new-color-map) (dict-set self-colors cur-vertex new-color)]                     ; make a new color map with the newly assigned color of this variable
-            [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex                   ; rebuild the adjacent-colors map by propagating the color of this node to all of its neighbors
-                                                                new-color
-                                                                (get-neighbors old-graph cur-vertex) 
-                                                                adjacent-colors)]
-            [(_) (update-pq priority-q cur-vertex (get-neighbors old-graph cur-vertex) handle-map new-color-map)]  ; update the priority queue to take the new saturation values into account
-            )
-            (color-graph new-color-map old-graph  ; remove the newly colored vertex from the graph and call color-graph recursively
-                          new-adjacent-colors priority-q handle-map))
+            [(cur-vertex) (dict-ref handle-map vertex-handle)])                                ; use the handle of the priority queue to find the actual vertex in the handle-map
+            (begin ;(printf "Current vertex: ~v ~v\n" cur-vertex (loc-ptr? cur-vertex locals-types))
+              (
+              if  (loc-ptr? cur-vertex locals-types)                                          ; check if the vertex being considered is a tuple pointer
+                  (let*-values                                                                ; if the vertex is a tuple, it has to be allocated to the root stack
+                    ( [(new-color-map) (dict-set self-colors cur-vertex rootstack-color)]                     ; make a new color map with the newly assigned color of this variable
+                      [(_) (set! rootstack-color (- rootstack-color 1))]                                        ; set the global variable rootstack-color
+                      [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex                   ; rebuild the adjacent-colors map by propagating the color of this node to all of its neighbors
+                                                                          rootstack-color
+                                                                          (get-neighbors old-graph cur-vertex) 
+                                                                          adjacent-colors)]
+                    )
+                      (color-graph new-color-map old-graph  ; call color-graph recursively
+                                      new-adjacent-colors priority-q handle-map locals-types))
+                  (let*-values                                                                ; if the vertex is not a tuple pointer, allocate it to a register
+                    ( [(new-color) (get-lowest-available-color (dict-ref adjacent-colors cur-vertex))]  ; assign the lowest possible color to this variable
+                      [(new-color-map) (dict-set self-colors cur-vertex new-color)]                     ; make a new color map with the newly assigned color of this variable
+                      [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex                   ; rebuild the adjacent-colors map by propagating the color of this node to all of its neighbors
+                                                                          new-color
+                                                                          (get-neighbors old-graph cur-vertex) 
+                                                                          adjacent-colors)]
+                      [(_) (update-pq priority-q cur-vertex (get-neighbors old-graph cur-vertex) handle-map new-color-map)])  ; update the priority queue to take the new saturation values into account
+                        (color-graph new-color-map old-graph  ; call color-graph recursively
+                                      new-adjacent-colors priority-q handle-map locals-types)
+            )))
+    )
   ))
 
   (define (get-used-callee all-callee color-map)                                  ; get all the used callee-saved registers
@@ -89,7 +121,7 @@
                   used-callees
               )))
 
-  (define (allocate-registers-blocks info old-graph) ; performs the first call to color-graph by initializing the required values
+  (define (allocate-registers-blocks info old-graph locals-types) ; performs the first call to color-graph by initializing the required values
     (let*-values (
             [(callee-saved) (list (cons -5 (Reg 'r15)) (cons -3 (Reg 'rbp)) (cons -2 (Reg 'rsp))
                                     (cons 7 (Reg 'rbx)) (cons 8 (Reg 'r12))
@@ -108,7 +140,7 @@
             [(priority-q handle-map) (initialize-pq (get-vertices old-graph) adjacent-map self-colors)] ; initialize the priority queue to check the most saturated variables so far
             [(info-colormap) (dict-set info 'color-map (color-graph self-colors
                                                   old-graph
-                                                  adjacent-map priority-q handle-map))]
+                                                  adjacent-map priority-q handle-map locals-types))]
             [(info-callee) (dict-set info-colormap 'used-callee (set->list (list->set (get-used-callee callee-saved (dict-ref info-colormap 'color-map) ))))] ; get the used callee-saved registers and deduplicate the list by converting to a set
           ) info-callee)
   )
@@ -116,13 +148,15 @@
   (define (allocate-registers-blocks-def def)
     (match def
       [(Def fun-name param-list ret-type fun-info fun-body)
-        (let ([new-info (allocate-registers-blocks fun-info (dict-ref fun-info 'conflicts))])
+        (let ([new-info (allocate-registers-blocks fun-info (dict-ref fun-info 'conflicts) (dict-ref fun-info 'locals-types))])
               (Def fun-name param-list ret-type new-info fun-body))]
     )
   )
 
   (match p
-    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (allocate-registers-blocks-def def)))]
+    [(ProgramDefs info defs)  (let* ( [new-defs (for/list ([def defs]) (allocate-registers-blocks-def def))]
+                                      [new-info (dict-set info 'rootstack-spilled (- (+ 7 rootstack-color)))]) 
+                                        (ProgramDefs new-info new-defs))]
   )
 
 )
