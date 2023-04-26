@@ -13,7 +13,7 @@
 
 (define (allocate-registers p)
 
-    (define rootstack-color -7)         ; global variable that will store the lowest rootstack variable index (starting from -7 and goes down)
+    (define lowest-rootstack -7)         ; global variable that will store the lowest rootstack variable index (starting from -7 and goes down)
 
     (define (loc-ptr? loc locals-types)
     (match loc
@@ -31,7 +31,7 @@
                   i))                                       ; return this color
 
   (define (get-lowest-available-color-tuple used-colors)    ; finds the available color for the root stack 
-    (for/first ([i (in-naturals 5)]                           ; start searching from color -5 (r15's color) and goes "down"
+    (for/first ([i (in-naturals 7)]                           ; start searching from color -7 and goes "down"
                   #:when (not (set-member? used-colors (- i)))) ; stop the for/first loop when a negative number is found that is not a used color
                   (- i)))                                       ; return this color
 
@@ -57,10 +57,10 @@
                   adj-colors)))
 
   (define (initialize-adjacent old-graph vertices self-colors)  ; will return a dictionary where each vertex has the colors of it's neighbors
-    (for/fold ([adjacent-map '()])
+    (dict-set (for/fold ([adjacent-map '()])
               ([vertex vertices])    ; go through each vertex to initialize its adjacent map
               (dict-set adjacent-map vertex (get-colors-of-neighbors vertex old-graph self-colors))
-    )
+    ) 'rootstack-index -7)
   )
 
   (define (add-to-pq-and-handle-map priority-q handle-map vertex num-adjacent colors)   ; add vertex to the pq, map the handle in the pq to the vertex
@@ -90,10 +90,11 @@
               (
               if  (loc-ptr? cur-vertex locals-types)                                          ; check if the vertex being considered is a tuple pointer
                   (let*-values                                                                ; if the vertex is a tuple, it has to be allocated to the root stack
-                    ( [(new-color-map) (dict-set self-colors cur-vertex rootstack-color)]                     ; make a new color map with the newly assigned color of this variable
-                      [(_) (set! rootstack-color (- rootstack-color 1))]                                        ; set the global variable rootstack-color
+                    ( [(new-color) (get-lowest-available-color-tuple (dict-ref adjacent-colors cur-vertex))]
+                      [(new-color-map) (dict-set self-colors cur-vertex new-color)]                     ; make a new color map with the newly assigned color of this variable
+                      [(_) (if (< new-color lowest-rootstack) (set! lowest-rootstack new-color) lowest-rootstack)]                                        ; set the global variable lowest-rootstack
                       [(new-adjacent-colors) (propagate-color-to-neighbors cur-vertex                   ; rebuild the adjacent-colors map by propagating the color of this node to all of its neighbors
-                                                                          rootstack-color
+                                                                          new-color
                                                                           (get-neighbors old-graph cur-vertex) 
                                                                           adjacent-colors)]
                     )
@@ -155,7 +156,7 @@
 
   (match p
     [(ProgramDefs info defs)  (let* ( [new-defs (for/list ([def defs]) (allocate-registers-blocks-def def))]
-                                      [new-info (dict-set info 'rootstack-spilled (- (+ 7 rootstack-color)))]) 
+                                      [new-info (dict-set info 'rootstack-spilled (- (+ 7 lowest-rootstack)))]) 
                                         (ProgramDefs new-info new-defs))]
   )
 
