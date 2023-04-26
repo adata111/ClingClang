@@ -18,9 +18,9 @@
 
     (define (patch-line line)
       (match line
-        [(Instr 'leaq (list arg (Deref 'rbp offset)))
+        [(Instr 'leaq (list arg (Deref reg offset)))
                               (list
-                                (Instr 'movq (list (Deref 'rbp offset) (Reg 'rax)))
+                                (Instr 'movq (list (Deref reg offset) (Reg 'rax)))
                                 (Instr 'leaq (list arg (Reg 'rax))))]
         [(TailJmp fun-name arity)
                       (list
@@ -34,17 +34,13 @@
                                   (list
                                     (Instr 'movq (list d (Reg 'rax)))
                                     (Instr 'movzbq (list s (Reg 'rax))))]
-        [(Instr operator (list (Deref 'rbp offset1) (Deref 'rbp offset2)))                  ; if the instruction operates on two stack locations, add %rax as an intermediate
+        [(Instr operator (list (Deref reg1 offset1) (Deref reg2 offset2)))                  ; if the instruction operates on two stack locations, add %rax as an intermediate
                           (list
-                            (Instr 'movq (list (Deref 'rbp offset1) (Reg 'rax)))
-                            (Instr operator (list (Reg 'rax) (Deref 'rbp offset2))))]
-        [(Instr operator (list (Deref 'r15 offset1) (Deref 'r15 offset2)))                  ; if the instruction operates on two root stack locations, add %rax as an intermediate
-                          (list
-                            (Instr 'movq (list (Deref 'r15 offset1) (Reg 'rax)))
-                            (Instr operator (list (Reg 'rax) (Deref 'r15 offset2))))]
-        [(Instr operator (list (Imm n) (Deref 'rbp offset))) #:when (> n (expt 2 16))       ; if one of the immediate values is > 2^16, use rax as an intermediate (edge case mentioned in EoC)
+                            (Instr 'movq (list (Deref reg1 offset1) (Reg 'rax)))
+                            (Instr operator (list (Reg 'rax) (Deref reg2 offset2))))]
+        [(Instr operator (list (Imm n) (Deref reg offset))) #:when (> n (expt 2 16))       ; if one of the immediate values is > 2^16, use rax as an intermediate (edge case mentioned in EoC)
           (list (Instr 'movq (list (Imm n) (Reg 'rax)))
-                (Instr operator (list (Reg 'rax) (Deref 'rbp offset)))
+                (Instr operator (list (Reg 'rax) (Deref reg offset)))
           )]
         [_ (list line)]
       )
