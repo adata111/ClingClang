@@ -13,7 +13,7 @@
 
 (define (allocate-registers p)
 
-    (define lowest-rootstack -7)         ; global variable that will store the lowest rootstack variable index (starting from -7 and goes down)
+    (define lowest-rootstack -6)         ; global variable that will store the lowest rootstack variable index (starting from -7 and goes down)
 
     (define (loc-ptr? loc locals-types)
     (match loc
@@ -156,7 +156,7 @@
 
   (match p
     [(ProgramDefs info defs)  (let* ( [new-defs (for/list ([def defs]) (allocate-registers-blocks-def def))]
-                                      [new-info (dict-set info 'rootstack-spilled (- (+ 7 lowest-rootstack)))]) 
+                                      [new-info (dict-set info 'rootstack-spilled (- (+ 6 lowest-rootstack)))]) 
                                         (ProgramDefs new-info new-defs))]
   )
 
