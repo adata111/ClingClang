@@ -14,7 +14,7 @@
 ;; prelude-and-conclusion : x86 -> x86
 (define (prelude-and-conclusion p)
   
-  (define (make-prelude-conclusion body-dict info fun-name)
+  (define (make-prelude-conclusion body-dict info fun-name stack-spilled)
 
     (define push-used-callees                             ; construct the instructions to push all the used callee-saved registers in the prelude
       (for/fold ([push-callee-instrs '()])                               
@@ -30,14 +30,38 @@
       )
     )
 
+    (define main-fun-prelude
+      (if (equal? fun-name 'main)
+        (cons 
+          (Instr 'addq (list (Imm (* stack-spilled 8)) (Reg 'r15)))
+          (append 
+            (list
+              (Instr 'movq (list (Imm 65536) (Reg 'rdi)))
+              (Instr 'movq (list (Imm 65536) (Reg 'rsi)))
+              (Callq 'initialize 2)
+              (Instr 'movq (list (Global 'rootstack_begin) (Reg 'r15)))
+            ) 
+            (for/list ([i (in-range stack-spilled)]) 
+                      (Instr 'movq (list (Imm 0) (Deref 'r15 (* (+ i 1) (- 8)))))
+            )
+          )
+        )
+        (list))
+    )
+
     (define main-body       (Block '() (append            ; update rbp to rsp, push used callee-saved registers, move rsp to allocate stack space for all variables, jump to start
                                         (list (Instr 'pushq (list (Reg 'rbp))) (Instr 'movq (list (Reg 'rsp) (Reg 'rbp))))
                                         push-used-callees
-                                        (list (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))) (Jmp (symbol-append fun-name 'start)))))
+                                        (list (Instr 'subq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))))
+                                        main-fun-prelude
+                                        (list (Jmp (symbol-append fun-name 'start)))))
     )
 
     (define conclusion-body (Block '() (append      ; move rsp back to the rbp of this frame, pop all used callee-saved registers, get the rbp of previous frame, return
-                                        (list (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp))))
+                                        (list 
+                                          (Instr 'subq (list (Imm (* stack-spilled 8)) (Reg 'r15)))
+                                          (Instr 'addq (list (Imm (dict-ref info 'stack-space)) (Reg 'rsp)))
+                                        )
                                         pop-used-callees
                                         (list (Instr 'popq (list (Reg 'rbp))) (Retq))))
     )
@@ -70,16 +94,16 @@
     (dict-set (dict-set process-body fun-name main-body) (symbol-append fun-name 'conclusion) conclusion-body )
   )
 
-  (define (make-prelude-conclusion-def def)
+  (define (make-prelude-conclusion-def def stack-spilled)
     (match def
       [(Def fun-name param-list ret-type fun-info fun-body)
-        (Def fun-name '() ret-type fun-info (make-prelude-conclusion fun-body fun-info fun-name))]
+        (Def fun-name '() ret-type fun-info (make-prelude-conclusion fun-body fun-info fun-name stack-spilled))]
     )
   )
 
   (match p
     [(ProgramDefs info defs)
-     (let ([new-defs (for/list ([d defs]) (make-prelude-conclusion-def d))])
+     (let ([new-defs (for/list ([d defs]) (make-prelude-conclusion-def d (dict-ref info 'rootstack-spilled)))])
       (X86Program info (append-map Def-body new-defs)))]
   )
 )
