@@ -46,7 +46,12 @@
             )
           )
         )
-        (list))
+        (cons
+          (Instr 'addq (list (Imm (* stack-spilled 8)) (Reg 'r15)))
+            (for/list ([i (in-range stack-spilled)]) 
+                      (Instr 'movq (list (Imm 0) (Deref 'r15 (* (+ i 1) (- 8)))))
+            )
+        ))
     )
 
     (define main-body       (Block '() (append            ; update rbp to rsp, push used callee-saved registers, move rsp to allocate stack space for all variables, jump to start
@@ -94,16 +99,16 @@
     (dict-set (dict-set process-body fun-name main-body) (symbol-append fun-name 'conclusion) conclusion-body )
   )
 
-  (define (make-prelude-conclusion-def def stack-spilled)
+  (define (make-prelude-conclusion-def def)
     (match def
       [(Def fun-name param-list ret-type fun-info fun-body)
-        (Def fun-name '() ret-type fun-info (make-prelude-conclusion fun-body fun-info fun-name stack-spilled))]
+        (Def fun-name '() ret-type fun-info (make-prelude-conclusion fun-body fun-info fun-name (dict-ref fun-info 'rootstack-spilled)))]
     )
   )
 
   (match p
     [(ProgramDefs info defs)
-     (let ([new-defs (for/list ([d defs]) (make-prelude-conclusion-def d (dict-ref info 'rootstack-spilled)))])
+     (let ([new-defs (for/list ([d defs]) (make-prelude-conclusion-def d))])
       (X86Program info (append-map Def-body new-defs)))]
   )
 )

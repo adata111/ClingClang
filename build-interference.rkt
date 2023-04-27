@@ -50,7 +50,7 @@
       [(TailJmp call-label arity)     (set (Reg 'rax) (Reg 'rcx) (Reg 'rdx) (Reg 'rsi) (Reg 'rdi) (Reg 'r8) (Reg 'r9) (Reg 'r10) (Reg 'r11))]
       [_ (set)]
     )
-  ) ; Duplicated from uncover-live
+  ) ; Modified from uncover-live
 
   (define (check-add-if-edge-interference instr live-loc interference-graph locals-types)
     ; (printf "  Instr: ~v  L-after-elem: ~v\n  ---\n" instr live-loc)
