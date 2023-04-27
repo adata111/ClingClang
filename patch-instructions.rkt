@@ -20,8 +20,8 @@
       (match line
         [(Instr 'leaq (list arg (Deref reg offset)))
                               (list
-                                (Instr 'movq (list (Deref reg offset) (Reg 'rax)))
-                                (Instr 'leaq (list arg (Reg 'rax))))]
+                                (Instr 'leaq (list arg (Reg 'rax)))
+                                (Instr 'movq (list (Reg 'rax) (Deref reg offset))))]
         [(TailJmp fun-name arity)
                       (list
                         (Instr 'movq (list fun-name (Reg 'rax)))
