@@ -32,20 +32,18 @@
 
     (define main-fun-prelude
       (if (equal? fun-name 'main)
-        (cons 
-          (Instr 'addq (list (Imm (* stack-spilled 8)) (Reg 'r15)))
           (append 
             (list
               (Instr 'movq (list (Imm 65536) (Reg 'rdi)))
               (Instr 'movq (list (Imm 65536) (Reg 'rsi)))
               (Callq 'initialize 2)
               (Instr 'movq (list (Global 'rootstack_begin) (Reg 'r15)))
+              (Instr 'addq (list (Imm (* stack-spilled 8)) (Reg 'r15)))
             ) 
             (for/list ([i (in-range stack-spilled)]) 
                       (Instr 'movq (list (Imm 0) (Deref 'r15 (* (+ i 1) (- 8)))))
             )
           )
-        )
         (cons
           (Instr 'addq (list (Imm (* stack-spilled 8)) (Reg 'r15)))
             (for/list ([i (in-range stack-spilled)]) 
