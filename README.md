@@ -1,40 +1,9 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-24ddc0f5d75046c5622901739e7c5dd533143b0c8e959d652212380cedb1ea36.svg)](https://classroom.github.com/a/nMqxKzhJ)
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-8d59dc4de5201274e310e4c54b9627a8934c3b88527886e3b421487c677d23eb.svg)](https://classroom.github.com/a/nMqxKzhJ)
-## Homework instructions
+# ClingClang
+A Racket implementation of a nanopass compiler for (a subset of) Racket to x86
 
-For your homework exercises, you will be expected to implement various
-compiler passes. It will ultimately be up to you how exactly to do
-this.
+## [Public student code](https://github.com/IUCompilerCourse/public-student-support-code)
 
-Before each assignment (and when told to by the instructor), you may need to update
-this code by pulling updates from GitHub by running this command from inside the folder:
-
-```
-   git pull
-```
-
-As you fill out the functions in `compiler.rkt`, tests are run with the
-`run-tests.rkt` module. You can run these tests either from the command
-line with:
-
-```
-   racket run-tests.rkt
-```
-
-Or by opening and running `run-tests.rkt` in DrRacket.
-
-Before running the compiler tests, you need to compile
-`runtime.c` (see below).
-
-## Public student code
-
-Utility code, test suites, etc. for the compiler course.
-
-This code will be described in the Appendix of the book.
-
-The `runtime.c` file needs to be compiled and linked with the assembly
-code that your compiler produces. To compile `runtime.c`, do the
-following
+Utility code, test suites, etc. for the [compiler course](https://github.com/IUCompilerCourse/Essentials-of-Compilation). This code will be described in the Appendix of the book. The `runtime.c` file needs to be compiled and linked with the assembly code that your compiler produces. To compile `runtime.c`, do the following
 ```
    gcc -c -g -std=c99 runtime.c
 ```
@@ -62,6 +31,28 @@ for that purpose. The usage of `compiler-tests` is quite similar to
 `interp-tests`. Example uses of these testing procedures appear in
 `run-tests.rkt`.
 
-As new languages are added, `run-tests.rkt` will be extended to
-test new passes. You will be provided with new iterations of
-the script for each assignment.
+## Adding compiler tests
+
+1. Add a `.rkt` test file in `/tests`, e.g.
+```
+; /tests/var_test_1.rkt
+(let ([x (read)])
+  (+ x 1))
+```
+2. Add a `.in` file containing inputs to all the `read` calls, e.g.
+```
+; /tests/var_test_1.in
+5
+```
+3. Add a `.res` file containingt the expected output, e.g.
+```
+; /test/var_test_1.res
+6
+```
+4. Tests are run with the `run-tests.rkt` module. You can run these tests either from the command
+line with:
+```
+racket run-tests.rkt
+```
+Or by opening and running `run-tests.rkt` in DrRacket.
+Before running the compiler tests, you need to compile `runtime.c` (see above).
